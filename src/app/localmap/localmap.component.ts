@@ -24,7 +24,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private offsetY = 0;
   private dragStart = { x: 0, y: 0 };
   private readonly MAX_SCALE = 1;
-  // private isDraging = false;
+  private nameChange: boolean = false;
   private isPanning = false;
   private isDraggingShape = false;
   private isDrawingShape = false;
@@ -43,8 +43,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private dragDistance = 0;
   private suppressClick = false;
   private readonly CLICK_DRAG_THRESHOLD = 5;
+  private activeHandle: string | null = null;
+private HANDLE_SIZE = 8;
   constructor(private carSocket: LocalmapService) {}
-
   selectShape(mode: 'free' | 'circle' | 'square' | 'triangle') {
     this.shapeMode = mode;
   }
@@ -259,24 +260,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return result;
   }
 
-  @HostListener('dblclick')
-  finalizeFreePolygon() {
-    if (this.shapeMode === 'free' && this.currentPolygon.length > 2) {
-      const shape: Shape = { mode: 'free', points: [...this.currentPolygon] };
-
-      if (this.isShapeInsideBoundary(shape) && !this.doesShapeOverlap(shape)) {
-        const fenceIndex = this.polygons.length + 1;
-        shape.name = `Fence ${fenceIndex}`;
-        this.polygons.push(shape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-      } else {
-        alert('Polygon is outside allowed boundary!');
-      }
-
-      this.currentPolygon = [];
-      this.redraw();
-    }
-  }
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
@@ -292,22 +275,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return;
     }
 
-    for (let i = this.polygons.length - 1; i >= 0; i--) {
-      // console.log(this.isPointInShape({ x, y }, this.polygons[i]), 'ispoint');
-      if (this.isPointInShape({ x, y }, this.polygons[i])) {
-        this.isDraggingShape = true;
-        this.selectedShapeIndex = i;
-        console.log(this.selectedShapeIndex, 'loop');
-        this.dragOffset = { x, y };
-        return;
-      }
+      for (let i = this.polygons.length - 1; i >= 0; i--) {
+        if (this.isPointInShape({ x, y }, this.polygons[i])) {
+          this.isDraggingShape = true;
+          this.selectedShapeIndex = i;
+          this.dragOffset = { x, y };
+          return;
+        }
+      
     }
+
+    // 🟢 Start drawing shape
     this.isDrawingShape = true;
-    if (this.shapeMode === 'free') {
-      this.currentPolygon.push({ x, y });
-    } else {
-      this.currentShape = { mode: this.shapeMode, startX: x, startY: y };
-    }
+    this.currentShape = { mode: this.shapeMode, startX: x, startY: y };
+    // if (this.shapeMode === 'free') {
+    //   this.currentPolygon = [];
+    //   this.currentPolygon.push({ x, y });
+    // } else {
+    //   this.currentShape = { mode: this.shapeMode, startX: x, startY: y };
+    // }
   }
 
   @HostListener('mousemove', ['$event'])
@@ -334,11 +320,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return;
     }
 
-    if (this.isDrawingShape && this.currentShape) {
+    if (this.isDrawingShape && this.currentShape && this.shapeMode !== 'free') {
       this.currentShape.endX = x;
       this.currentShape.endY = y;
       this.redraw();
     }
+    // if (this.isDrawingShape && this.shapeMode === 'free') {
+    //   this.currentPolygon.push({ x, y });
+    //   this.redraw();
+    //   return;
+    // }
   }
   @HostListener('contextmenu', ['$event'])
   onRightClick(event: MouseEvent) {
@@ -354,7 +345,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     if (this.isDrawingShape && this.currentShape) {
       if (this.shapeMode !== 'free') {
-        // 🔹 CLICK CASE (no drag)
         if (this.dragDistance <= this.CLICK_DRAG_THRESHOLD) {
           if (this.shapeMode === 'circle') {
             this.currentShape.radius = this.circleRadius;
@@ -371,13 +361,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }
         }
 
-        // 🔹 Both click & drag finalize here
         if (
           this.isShapeInsideBoundary(this.currentShape) &&
           !this.doesShapeOverlap(this.currentShape)
         ) {
-          const fenceIndex = this.polygons.length + 1;
-          this.currentShape.name = `Fence ${fenceIndex}`;
+          this.nameChange = true;
+          const userName = prompt('Enter name for this shape:', 'My Fence');
+          if (userName) {
+            this.currentShape.name = userName;
+          } else {
+            this.currentShape.name = `Fence-${Date.now()}`; // fallback unique name
+          }
+          this.nameChange = false;
           this.polygons.push({ ...this.currentShape });
           localStorage.setItem('geoFences', JSON.stringify(this.polygons));
         } else {
@@ -387,18 +382,58 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.currentShape = null;
     }
 
-    // Reset states
     this.isPanning = false;
     this.isDraggingShape = false;
     this.isDrawingShape = false;
     this.selectedShapeIndex = null;
-
     this.redraw();
+  }
+  renameShape(index: number) {
+    this.nameChange = false;
+    const shape = this.polygons[index];
+    const newName = prompt('Enter new name:', shape.name || '');
+    if (newName && newName.trim() !== '') {
+      shape.name = newName.trim();
+      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      this.redraw();
+    }
+  }
+  @HostListener('dblclick', ['$event'])
+  onDoubleClick(event: MouseEvent) {
+    const { x, y } = this.getTransformedCoords(event);
+
+    for (let i = this.polygons.length - 1; i >= 0; i--) {
+      if (this.isPointInShape({ x, y }, this.polygons[i])) {
+        this.nameChange = true;
+        this.renameShape(i);
+        return;
+      }
+    }
+
+    if (this.shapeMode === 'free' && this.currentPolygon.length > 2) {
+      const shape: Shape = { mode: 'free', points: [...this.currentPolygon] };
+
+      if (this.isShapeInsideBoundary(shape) && !this.doesShapeOverlap(shape)) {
+        const userName = prompt('Enter name for this shape:', 'My Fence');
+        shape.name =
+          userName && userName.trim() !== ''
+            ? userName.trim()
+            : `Fence-${Date.now()}`;
+        this.polygons.push(shape);
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        // return;
+      } else {
+        alert('Polygon is outside allowed boundary!');
+      }
+
+      this.currentPolygon = [];
+      this.redraw();
+    }
   }
 
   zoomIn() {
     this.scale = Math.min(this.scale * 1.2, this.MAX_SCALE);
-    // this.redraw();
+    this.redraw();
   }
 
   zoomOut() {
@@ -427,7 +462,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return { x, y };
   }
   private moveShape(shape: Shape, dx: number, dy: number) {
-    // make a copy first
     const movedShape: Shape = JSON.parse(JSON.stringify(shape));
 
     if (movedShape.mode === 'free' && movedShape.points) {
@@ -442,12 +476,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       if (movedShape.endY !== undefined) movedShape.endY += dy;
     }
 
-    // Only apply movement if still inside boundary
     if (
       this.isShapeInsideBoundary(movedShape) &&
       !this.doesShapeOverlap(movedShape, this.selectedShapeIndex)
     ) {
-      Object.assign(shape, movedShape); // commit move
+      Object.assign(shape, movedShape);
     }
   }
   private redraw() {
@@ -455,7 +488,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Reset transform for scale & pan
     this.ctx.setTransform(
       this.scale,
       0,
@@ -466,28 +498,26 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     );
     this.ctx.imageSmoothingEnabled = this.scale <= 1;
 
-    // Draw base map
     this.ctx.drawImage(this.mapImage.nativeElement, 0, 0);
 
-    // ✅ Only draw shapes inside boundaries
     this.polygons.forEach((shape) => {
       if (this.isShapeInsideBoundary(shape)) {
         this.drawShape(shape, 'rgba(255,0,0,0.3)', 'red');
         if (shape.name) this.drawShapeLabel(shape);
       }
     });
-
-    // Draw current working shape
     if (this.shapeMode === 'free' && this.currentPolygon.length) {
-      const shape: Shape = { mode: 'free', points: this.currentPolygon };
-      if (this.isShapeInsideBoundary(shape)) {
-        this.drawShape(shape, 'rgba(0,255,0,0.3)', 'green');
+      if (this.nameChange) {
+        return;
+      } else {
+        const tempShape: Shape = { mode: 'free', points: this.currentPolygon };
+        this.drawShape(tempShape, 'transparent', 'green');
       }
     } else if (
       this.currentShape &&
       this.isShapeInsideBoundary(this.currentShape)
     ) {
-      this.drawShape(this.currentShape, 'rgba(0,255,0,0.3)', 'green');
+      // this.drawShape(this.currentShape, 'rgba(0,255,0,0.3)', 'green');
     }
 
     this.ctx.beginPath();
@@ -555,7 +585,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.ctx.moveTo(shape.points[0].x, shape.points[0].y);
       for (let i = 1; i < shape.points.length; i++)
         this.ctx.lineTo(shape.points[i].x, shape.points[i].y);
-      this.ctx.closePath();
+      // this.ctx.closePath();
     }
     this.ctx.fillStyle = fillStyle;
     this.ctx.fill();

@@ -1,34 +1,40 @@
 <div class="map-container">
   <img #mapImage id="map-image" src="assets/download.png" hidden />
   <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
+  <div class="resize-handle top-left"></div>
+  <div class="resize-handle top-right"></div>
+  <div class="resize-handle bottom-left"></div>
+  <div class="resize-handle bottom-right"></div>
+  <div class="controls">
+    <button (click)="selectShape('free')">Free</button>
+    <button (click)="selectShape('circle')">Circle</button>
+    <button (click)="selectShape('square')">Square</button>
+    <button (click)="selectShape('triangle')">Triangle</button>
+    <button (click)="zoomIn()">+</button>
+    <button (click)="zoomOut()">-</button>
+    <button (click)="resetView()">Reset</button>
+    <button (click)="clearGeofences()">Clear Geofences</button>
 
-<div class="controls">
-  <button (click)="selectShape('free')">Free</button>
-  <button (click)="selectShape('circle')">Circle</button>
-  <button (click)="selectShape('square')">Square</button>
-  <button (click)="selectShape('triangle')">Triangle</button>
-  <button (click)="zoomIn()">+</button>
-  <button (click)="zoomOut()">-</button>
-  <button (click)="resetView()">Reset</button>
-  <button (click)="clearGeofences()">Clear Geofences</button>
-
-<div class="shape-options" *ngIf="shapeMode !== 'free'">
-  <ng-container [ngSwitch]="shapeMode">
-    <div *ngSwitchCase="'circle'">
-      <label>Radius: <input type="number" [(ngModel)]="circleRadius" /></label>
+    <div class="shape-options" *ngIf="shapeMode !== 'free'">    
+      <ng-container [ngSwitch]="shapeMode">
+        <div *ngSwitchCase="'circle'">
+          <label
+            >Radius: <input type="number" [(ngModel)]="circleRadius"
+          /></label>
+        </div>
+        <div *ngSwitchCase="'square'">
+          <label
+            >Side length: <input type="number" [(ngModel)]="squareSize"
+          /></label>
+        </div>
+        <div *ngSwitchCase="'triangle'">
+          <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
+          ><br />
+          <label
+            >Height: <input type="number" [(ngModel)]="triangleHeight"
+          /></label>
+        </div>
+      </ng-container>
     </div>
-    <div *ngSwitchCase="'square'">
-      <label
-        >Side length: <input type="number" [(ngModel)]="squareSize"
-      /></label>
-    </div>
-    <div *ngSwitchCase="'triangle'">
-      <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
-      ><br />
-      <label
-        >Height: <input type="number" [(ngModel)]="triangleHeight"
-      /></label>
-    </div>
-  </ng-container>
+  </div>
 </div>
-</div></div>
