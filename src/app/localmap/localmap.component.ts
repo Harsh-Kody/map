@@ -8,6 +8,9 @@ import {
 } from '@angular/core';
 import { Shape } from '../modal/shape';
 import { LocalmapService } from '../services/localmap.service';
+import { map } from 'rxjs';
+import { RobotLocation } from '../modal/RobotLocation';
+import { MapStorageService } from '../services/map-storage.service';
 
 @Component({
   selector: 'app-localmap',
@@ -26,34 +29,86 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private readonly MAX_SCALE = 1;
   private nameChange: boolean = false;
   private isPanning = false;
-  private isDraggingShape = false;
+  private originalPoints: { x: number; y: number }[] = [];
   private isDrawingShape = false;
   private fittedScale = 1;
   polygons: Shape[] = [];
   currentPolygon: { x: number; y: number }[] = [];
   shapeMode: 'free' | 'circle' | 'square' | 'triangle' = 'free';
   currentShape: Shape | null = null;
-  circleRadius: number = 50;
-  squareSize: number = 80;
-  triangleBase: number = 100;
-  triangleHeight: number = 80;
-  private selectedShapeIndex: number | null = null;
-  private dragOffset = { x: 0, y: 0 };
+  circleRadius: number = 100;
+  squareSize: number = 140;
+  triangleBase: number = 200;
+  triangleHeight: number = 140;
   private lastMouseDownPos = { x: 0, y: 0 };
   private dragDistance = 0;
+  private resizingShape: Shape | null = null;
+  private activeHandleIndex: number | null = null;
   private suppressClick = false;
   private readonly CLICK_DRAG_THRESHOLD = 5;
-  private activeHandle: string | null = null;
-private HANDLE_SIZE = 8;
-  constructor(private carSocket: LocalmapService) {}
+  private draggingShape: Shape | null = null;
+  private dragOffset = { x: 0, y: 0 };
+  robot: RobotLocation | null = null;
+  private handleSize = 49;
+  deleteMode: boolean = false;
+  private hoveredShape: Shape | null = null;
+  mapImageSrc: string | null = null;
+  private readonly HANDLE_TOLERANCE = 20;
+  restrictionPoints: { id: string; x: number; y: number }[] = [];
+  showPath = false;
+  robotPath: { x: number; y: number }[] = [];
+  constructor(
+    private carSocket: LocalmapService,
+    private mapStorage: MapStorageService
+  ) {}
+  private boundaryMinX = 73.88825541619121;
+  private boundaryMaxX = 5069.783352337514;
+  private boundaryMinY = 144.65222348916728;
+  private boundaryMaxY = 3551.7673888255417;
   selectShape(mode: 'free' | 'circle' | 'square' | 'triangle') {
     this.shapeMode = mode;
+    this.currentPolygon = [];
+    this.isDrawingShape = false;
+    this.currentShape = null;
   }
 
-  ngOnInit(): void {
-    // this.carSocket.getCarLocation().subscribe((coords) => {
-    //   console.log("Car location from server" , coords);
-    // })
+  async ngOnInit() {
+    const blob = await this.mapStorage.getMap('mainMap');
+    if (blob) {
+      const objectURL = URL.createObjectURL(blob);
+      console.log(objectURL);
+      this.mapImageSrc = objectURL;
+    }
+    this.carSocket.getCarLocation().subscribe((data) => {   
+  
+      if (this.showPath) {
+          this.robotPath.push({ x: data.x, y: data.y });
+        }
+      data.x = Math.max(this.boundaryMinX, Math.min(this.boundaryMaxX, data.x));
+      data.y = Math.max(this.boundaryMinY, Math.min(this.boundaryMaxY, data.y));
+      this.robot = data;
+      this.robot.fenceName = null;
+      for (let shape of this.polygons) {
+        const canvasPoint = this.toCanvasCoords(data.x, data.y);
+        if (this.isPointInShape(canvasPoint, shape)) {
+          this.robot.fenceName = shape.name || null;
+        }
+      }
+      if (data.type === 'add') {
+        // ✅ add new restriction
+        this.restrictionPoints.push({
+          id: data.id,
+          x: data.x,
+          y: data.y,
+        });
+      } else if (data.type === 'remove') {
+        // ✅ remove restriction by id
+        this.restrictionPoints = this.restrictionPoints.filter(
+          (p) => p.id !== data.id
+        );
+      }
+      this.redraw();
+    });
   }
 
   private isShapeInsideBoundary(shape: Shape): boolean {
@@ -70,7 +125,7 @@ private HANDLE_SIZE = 8;
         this.isInsideBoundary(shape.startX! - r, shape.startY! - r) &&
         this.isInsideBoundary(shape.startX! + r, shape.startY! + r)
       );
-    } else if (shape.mode === 'square' || shape.mode === 'triangle') {
+    } else if (shape.mode === 'square') {
       const corners = [
         { x: shape.startX!, y: shape.startY! },
         { x: shape.endX!, y: shape.startY! },
@@ -78,54 +133,166 @@ private HANDLE_SIZE = 8;
         { x: shape.startX!, y: shape.endY! },
       ];
       return corners.every((c) => this.isInsideBoundary(c.x, c.y));
+    } else if (shape.mode === 'triangle') {
+      const midX = shape.startX! * 2 - shape.endX!;
+      const midY = shape.endY!;
+      const vertices = [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: midX, y: midY },
+      ];
+      return vertices.every((v) => this.isInsideBoundary(v.x, v.y));
     }
     return false;
   }
+  private isDuplicateName(name: string | null): boolean {
+    return this.polygons.some(
+      (shape) => shape.name?.toLowerCase() === name?.toLowerCase()
+    );
+  }
+  toggleDeleteMode() {
+    console.log('cr', this.polygons);
+    if (this.polygons.length !== 0) {
+      this.deleteMode = !this.deleteMode;
+    }
+  }
+  togglePath() {
+    console.log("toggle path",this.showPath);
+    this.showPath = !this.showPath;
 
+    // Clear path if hiding
+    if (!this.showPath) {
+      this.robotPath = [];
+      this.redraw();
+    }
+  }
   private doesShapeOverlap(
     newShape: Shape,
     ignoreIndex: number | null = null
   ): boolean {
+    const samplePoints: { x: number; y: number }[] = [];
+
+    if (newShape.mode === 'circle' && newShape.radius) {
+      const r = newShape.radius;
+      const step = r / 4;
+      for (let dx = -r; dx <= r; dx += step) {
+        for (let dy = -r; dy <= r; dy += step) {
+          if (dx * dx + dy * dy <= r * r) {
+            samplePoints.push({
+              x: newShape.startX! + dx,
+              y: newShape.startY! + dy,
+            });
+          }
+        }
+      }
+    } else if (newShape.mode === 'square' && newShape.endX && newShape.endY) {
+      const minX = Math.min(newShape.startX!, newShape.endX);
+      const maxX = Math.max(newShape.startX!, newShape.endX);
+      const minY = Math.min(newShape.startY!, newShape.endY);
+      const maxY = Math.max(newShape.startY!, newShape.endY);
+      const step = 10;
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          samplePoints.push({ x, y });
+        }
+      }
+    } else if (newShape.mode === 'triangle' && newShape.endX && newShape.endY) {
+      const midX = newShape.startX! * 2 - newShape.endX!;
+      const midY = newShape.endY!;
+
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.beginPath();
+      this.ctx.moveTo(newShape.startX!, newShape.startY!);
+      this.ctx.lineTo(newShape.endX!, newShape.endY!);
+      this.ctx.lineTo(midX, midY);
+      this.ctx.closePath();
+
+      const minX = Math.min(newShape.startX!, newShape.endX!, midX);
+      const maxX = Math.max(newShape.startX!, newShape.endX!, midX);
+      const minY = Math.min(newShape.startY!, newShape.endY!, midY);
+      const maxY = Math.max(newShape.startY!, newShape.endY!, midY);
+      const step = 10;
+
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          if (this.ctx.isPointInPath(x, y)) {
+            samplePoints.push({ x, y });
+          }
+        }
+      }
+      this.ctx.restore();
+    } else if (newShape.mode === 'free' && newShape.points) {
+      const minX = Math.min(...newShape.points.map((p) => p.x));
+      const maxX = Math.max(...newShape.points.map((p) => p.x));
+      const minY = Math.min(...newShape.points.map((p) => p.y));
+      const maxY = Math.max(...newShape.points.map((p) => p.y));
+
+      const step = 10;
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.beginPath();
+      this.ctx.moveTo(newShape.points[0].x, newShape.points[0].y);
+      for (let j = 1; j < newShape.points.length; j++) {
+        this.ctx.lineTo(newShape.points[j].x, newShape.points[j].y);
+      }
+      this.ctx.closePath();
+
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          if (this.ctx.isPointInPath(x, y)) {
+            samplePoints.push({ x, y });
+          }
+        }
+      }
+      this.ctx.restore();
+    }
     for (let i = 0; i < this.polygons.length; i++) {
       if (ignoreIndex !== null && i === ignoreIndex) continue;
-      const existingShape = this.polygons[i];
-
-      // Use canvas hit test
+      const existing = this.polygons[i];
       this.ctx.save();
-      this.ctx.setTransform(
-        this.scale,
-        0,
-        0,
-        this.scale,
-        this.offsetX,
-        this.offsetY
-      );
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.beginPath();
-      this.drawShape(existingShape, 'transparent', 'transparent');
 
-      let overlap = false;
-
-      if (newShape.mode === 'free' && newShape.points) {
-        overlap = newShape.points.some((p) => this.ctx.isPointInPath(p.x, p.y));
-      } else if (newShape.mode === 'circle') {
-        const r = newShape.radius ?? 40;
-        overlap = this.ctx.isPointInPath(newShape.startX!, newShape.startY!);
-        if (!overlap) {
-          overlap =
-            this.ctx.isPointInPath(newShape.startX! - r, newShape.startY!) ||
-            this.ctx.isPointInPath(newShape.startX! + r, newShape.startY!) ||
-            this.ctx.isPointInPath(newShape.startX!, newShape.startY! - r) ||
-            this.ctx.isPointInPath(newShape.startX!, newShape.startY! + r);
+      if (existing.mode === 'circle' && existing.radius) {
+        this.ctx.arc(
+          existing.startX!,
+          existing.startY!,
+          existing.radius,
+          0,
+          Math.PI * 2
+        );
+      } else if (existing.mode === 'square' && existing.endX && existing.endY) {
+        this.ctx.rect(
+          existing.startX!,
+          existing.startY!,
+          existing.endX - existing.startX!,
+          existing.endY - existing.startY!
+        );
+      } else if (
+        existing.mode === 'triangle' &&
+        existing.endX &&
+        existing.endY
+      ) {
+        const midX = existing.startX! * 2 - existing.endX!;
+        const midY = existing.endY!;
+        this.ctx.moveTo(existing.startX!, existing.startY!);
+        this.ctx.lineTo(existing.endX!, existing.endY!);
+        this.ctx.lineTo(midX, midY);
+        this.ctx.closePath();
+      } else if (existing.mode === 'free' && existing.points) {
+        this.ctx.moveTo(existing.points[0].x, existing.points[0].y);
+        for (let j = 1; j < existing.points.length; j++) {
+          this.ctx.lineTo(existing.points[j].x, existing.points[j].y);
         }
-      } else {
-        // test center point
-        const cx = (newShape.startX! + (newShape.endX ?? newShape.startX!)) / 2;
-        const cy = (newShape.startY! + (newShape.endY ?? newShape.startY!)) / 2;
-        overlap = this.ctx.isPointInPath(cx, cy);
+        this.ctx.closePath();
       }
 
+      if (samplePoints.some((p) => this.ctx.isPointInPath(p.x, p.y))) {
+        this.ctx.restore();
+        return true;
+      }
       this.ctx.restore();
-      if (overlap) return true;
     }
     return false;
   }
@@ -146,8 +313,9 @@ private HANDLE_SIZE = 8;
     img.onload = () => {
       this.fitImageToCanvas();
       const saved = localStorage.getItem('geoFences');
+      console.log(saved, 'saved');
       this.polygons = saved ? JSON.parse(saved) : [];
-
+      this.carSocket.updateFences(this.polygons);
       this.redraw();
     };
     window.addEventListener('resize', () => {
@@ -180,50 +348,46 @@ private HANDLE_SIZE = 8;
     this.offsetX = (canvas.width - img.naturalWidth * this.scale) / 2;
     this.offsetY = (canvas.height - img.naturalHeight * this.scale) / 2;
   }
-
   onCanvasClick(event: MouseEvent) {
-    if (this.suppressClick) {
-      this.suppressClick = false;
-      return;
-    }
+    if (event.button !== 0) return;
+    if (event.target !== this.mapCanvas.nativeElement) return;
+
     const { x, y } = this.getTransformedCoords(event);
-
-    if (!this.isInsideBoundary(x, y)) {
-      console.warn('Click outside boundary');
+    if (this.deleteMode) {
+      const { x, y } = this.getTransformedCoords(event);
+      for (let i = this.polygons.length - 1; i >= 0; i--) {
+        if (this.isPointInShape({ x, y }, this.polygons[i])) {
+          if (confirm(`Delete fence "${this.polygons[i].name}"?`)) {
+            this.polygons.splice(i, 1);
+            localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+            this.carSocket.updateFences(this.polygons);
+            this.redraw();
+          }
+          break;
+        }
+      }
+      this.deleteMode = false;
+      this.mapCanvas.nativeElement.style.cursor = 'default';
+      return;
+    }
+    if (this.shapeMode === 'free') {
+      console.log(this.isDrawingShape, 'isdr');
+      if (!this.isDrawingShape) {
+        this.currentPolygon = [];
+      }
+      this.currentPolygon.push({ x, y });
+      this.isDrawingShape = true;
+      this.redraw();
       return;
     }
 
-    if (this.shapeMode === 'free') {
-      this.currentPolygon.push({ x, y });
-      this.redraw();
-    }
-
-    // ❌ Remove shape pushing from here
-    // Just initialize the shape for dragging/drawing
-    if (this.shapeMode === 'circle') {
-      this.currentShape = {
-        mode: 'circle',
-        startX: x,
-        startY: y,
-        radius: this.circleRadius,
-      };
-    } else if (this.shapeMode === 'square') {
-      this.currentShape = {
-        mode: 'square',
-        startX: x,
-        startY: y,
-        endX: x + this.squareSize,
-        endY: y + this.squareSize,
-      };
-    } else if (this.shapeMode === 'triangle') {
-      this.currentShape = {
-        mode: 'triangle',
-        startX: x,
-        startY: y,
-        endX: x + this.triangleBase,
-        endY: y + this.triangleHeight,
-      };
-    }
+    this.currentShape = {
+      mode: this.shapeMode,
+      startX: x,
+      startY: y,
+      endX: x,
+      endY: y,
+    };
   }
 
   @HostListener('wheel', ['$event'])
@@ -241,31 +405,103 @@ private HANDLE_SIZE = 8;
     point: { x: number; y: number },
     shape: Shape
   ): boolean {
-    const { x, y } = this.toCanvasCoords(point.x, point.y);
-
     this.ctx.save();
-    this.ctx.setTransform(
-      this.scale,
-      0,
-      0,
-      this.scale,
-      this.offsetX,
-      this.offsetY
-    );
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.beginPath();
-    this.drawShape(shape, 'transparent', 'transparent');
-    const result = this.ctx.isPointInPath(x, y);
-    this.ctx.restore();
 
+    if (shape.mode === 'circle') {
+      const r =
+        shape.radius ??
+        Math.sqrt(
+          Math.pow((shape.endX ?? shape.startX)! - shape.startX!, 2) +
+            Math.pow((shape.endY ?? shape.startY!) - shape.startY!, 2)
+        );
+      this.ctx.arc(shape.startX!, shape.startY!, r, 0, 2 * Math.PI);
+      this.ctx.closePath();
+    } else if (shape.mode === 'square') {
+      this.ctx.rect(
+        shape.startX!,
+        shape.startY!,
+        (shape.endX ?? shape.startX!) - shape.startX!,
+        (shape.endY ?? shape.startY!) - shape.startY!
+      );
+    } else if (shape.mode === 'triangle') {
+      const midX = shape.startX! * 2 - shape.endX!;
+      const midY = shape.endY!;
+      this.ctx.moveTo(shape.startX!, shape.startY!);
+      this.ctx.lineTo(shape.endX!, shape.endY!);
+      this.ctx.lineTo(midX, midY);
+      this.ctx.closePath();
+    } else if (shape.mode === 'free' && shape.points?.length) {
+      this.ctx.moveTo(shape.points[0].x, shape.points[0].y);
+      for (let i = 1; i < shape.points.length; i++) {
+        this.ctx.lineTo(shape.points[i].x, shape.points[i].y);
+      }
+      this.ctx.closePath();
+    }
+
+    const result = this.ctx.isPointInPath(point.x, point.y);
+    this.ctx.restore();
     return result;
   }
-
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
+    if (event.target !== this.mapCanvas.nativeElement) return;
+
+    const { x, y } = this.getTransformedCoords(event);
+
+    if (!this.isInsideBoundary(x, y)) {
+      alert('Click outside boundary');
+      return;
+    }
+    if (this.hoveredShape) {
+      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
+        const handle = {
+          x: this.hoveredShape.startX! + this.hoveredShape.radius,
+          y: this.hoveredShape.startY!,
+        };
+        if (Math.hypot(x - handle.x, y - handle.y) < this.HANDLE_TOLERANCE) {
+          this.resizingShape = this.hoveredShape;
+          this.activeHandleIndex = 0;
+          return;
+        }
+      } else if (
+        this.hoveredShape.mode === 'square' ||
+        this.hoveredShape.mode === 'triangle'
+      ) {
+        const corners = this.getShapeCorners(this.hoveredShape);
+        for (let i = 0; i < corners.length; i++) {
+          if (
+            Math.abs(x - corners[i].x) < this.HANDLE_TOLERANCE &&
+            Math.abs(y - corners[i].y) < this.HANDLE_TOLERANCE
+          ) {
+            this.resizingShape = this.hoveredShape;
+            this.activeHandleIndex = i;
+            return;
+          }
+        }
+      } else if (
+        this.hoveredShape.mode === 'free' &&
+        this.hoveredShape.points
+      ) {
+        for (let i = 0; i < this.hoveredShape.points.length; i++) {
+          const p = this.hoveredShape.points[i];
+          if (Math.hypot(x - p.x, y - p.y) < this.HANDLE_TOLERANCE) {
+            this.resizingShape = this.hoveredShape;
+            this.activeHandleIndex = i;
+            this.originalPoints = this.hoveredShape.points.map((pt) => ({
+              ...pt,
+            }));
+            return;
+          }
+        }
+      }
+    }
+
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
-    const { x, y } = this.getTransformedCoords(event);
+
     if (event.button === 2) {
       this.isPanning = true;
       this.dragStart = {
@@ -274,50 +510,223 @@ private HANDLE_SIZE = 8;
       };
       return;
     }
+    if (event.button !== 0) return;
 
+    if (this.shapeMode === 'circle') {
+      this.currentShape = { mode: 'circle', startX: x, startY: y };
+      this.isDrawingShape = true;
+    } else if (this.shapeMode === 'square') {
+      this.currentShape = {
+        mode: 'square',
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
+      };
+      this.isDrawingShape = true;
+    } else if (this.shapeMode === 'triangle') {
+      this.currentShape = {
+        mode: 'triangle',
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
+      };
+      this.isDrawingShape = true;
+    } else {
       for (let i = this.polygons.length - 1; i >= 0; i--) {
         if (this.isPointInShape({ x, y }, this.polygons[i])) {
-          this.isDraggingShape = true;
-          this.selectedShapeIndex = i;
+          this.draggingShape = this.polygons[i];
           this.dragOffset = { x, y };
-          return;
+          this.isDrawingShape = false;
+          this.originalPoints = this.draggingShape.points
+            ? this.draggingShape.points.map((p) => ({ ...p }))
+            : [
+                {
+                  x: this.draggingShape.startX!,
+                  y: this.draggingShape.startY!,
+                },
+              ];
+          break;
         }
-      
+      }
     }
 
-    // 🟢 Start drawing shape
-    this.isDrawingShape = true;
-    this.currentShape = { mode: this.shapeMode, startX: x, startY: y };
-    // if (this.shapeMode === 'free') {
-    //   this.currentPolygon = [];
-    //   this.currentPolygon.push({ x, y });
-    // } else {
-    //   this.currentShape = { mode: this.shapeMode, startX: x, startY: y };
-    // }
+    for (let i = this.polygons.length - 1; i >= 0; i--) {
+      if (this.isPointInShape({ x, y }, this.polygons[i])) {
+        this.draggingShape = this.polygons[i];
+        this.dragOffset = { x, y };
+        if (this.draggingShape.mode === 'free' && this.draggingShape.points)
+          this.originalPoints = this.draggingShape.points.map((p) => ({
+            ...p,
+          }));
+        else
+          this.originalPoints = [
+            { x: this.draggingShape.startX!, y: this.draggingShape.startY! },
+            { x: this.draggingShape.endX!, y: this.draggingShape.endY! },
+          ];
+        return;
+      }
+    }
   }
+  private restoreOriginalShape(shape: Shape) {
+    if (!shape) return;
 
+    if (shape.mode === 'free' && shape.points) {
+      shape.points = this.originalPoints.map((p) => ({ ...p }));
+    } else if (shape.mode === 'circle') {
+      const orig = this.originalPoints[0];
+      shape.startX = orig.x;
+      shape.startY = orig.y;
+      shape.radius = this.originalPoints[1]?.x ?? this.circleRadius; // store radius in second point
+    } else if (shape.mode === 'square' || shape.mode === 'triangle') {
+      shape.startX = this.originalPoints[0].x;
+      shape.startY = this.originalPoints[0].y;
+      shape.endX = this.originalPoints[1].x;
+      shape.endY = this.originalPoints[1].y;
+    }
+  }
   @HostListener('mousemove', ['$event'])
   onMouseMove(event: MouseEvent) {
-    const dxFromDown = event.clientX - this.lastMouseDownPos.x;
-    const dyFromDown = event.clientY - this.lastMouseDownPos.y;
-    this.dragDistance = Math.hypot(dxFromDown, dyFromDown);
+    if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
-
-    if (this.isDraggingShape && this.selectedShapeIndex !== null) {
-      const shape = this.polygons[this.selectedShapeIndex];
-      const dx = x - this.dragOffset.x;
-      const dy = y - this.dragOffset.y;
-      this.moveShape(shape, dx, dy);
-      this.dragOffset = { x, y };
-      this.redraw();
-      return;
+    let foundHover = false;
+    for (let i = this.polygons.length - 1; i >= 0; i--) {
+      if (this.isPointInShape({ x, y }, this.polygons[i])) {
+        this.hoveredShape = this.polygons[i];
+        foundHover = true;
+        break;
+      }
     }
-
+    if (!foundHover) this.hoveredShape = null;
+    this.redraw();
     if (this.isPanning) {
       this.offsetX = event.clientX - this.dragStart.x;
       this.offsetY = event.clientY - this.dragStart.y;
       this.redraw();
       return;
+    }
+    if (this.hoveredShape) {
+      const HANDLE_TOLERANCE = 25;
+      this.mapCanvas.nativeElement.style.cursor = 'move';
+      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
+        const handle = {
+          x: this.hoveredShape.startX! + this.hoveredShape.radius,
+          y: this.hoveredShape.startY!,
+        };
+        if (Math.hypot(x - handle.x, y - handle.y) < HANDLE_TOLERANCE) {
+          this.mapCanvas.nativeElement.style.cursor = 'ew-resize';
+        }
+      } else if (
+        this.hoveredShape.mode === 'square' ||
+        this.hoveredShape.mode === 'triangle'
+      ) {
+        const corners = this.getShapeCorners(this.hoveredShape);
+        for (let c of corners) {
+          if (
+            Math.abs(x - c.x) < HANDLE_TOLERANCE &&
+            Math.abs(y - c.y) < HANDLE_TOLERANCE
+          ) {
+            this.mapCanvas.nativeElement.style.cursor = 'nwse-resize';
+            break;
+          }
+        }
+      } else if (
+        this.hoveredShape.mode === 'free' &&
+        this.hoveredShape.points
+      ) {
+        for (let p of this.hoveredShape.points) {
+          if (Math.hypot(x - p.x, y - p.y) < HANDLE_TOLERANCE) {
+            this.mapCanvas.nativeElement.style.cursor = 'nwse-resize';
+            break;
+          }
+        }
+      }
+    } else {
+      this.mapCanvas.nativeElement.style.cursor = 'default';
+    }
+    if (this.resizingShape && this.activeHandleIndex !== null) {
+      const proposedShape: Shape = JSON.parse(
+        JSON.stringify(this.resizingShape)
+      );
+
+      if (proposedShape.mode === 'circle') {
+        const dx = x - proposedShape.startX!;
+        const dy = y - proposedShape.startY!;
+        proposedShape.radius = Math.hypot(dx, dy);
+      } else if (proposedShape.mode === 'square') {
+        switch (this.activeHandleIndex) {
+          case 0:
+            proposedShape.startX = x;
+            proposedShape.startY = y;
+            break;
+          case 1:
+            proposedShape.endX = x;
+            proposedShape.startY = y;
+            break;
+          case 2:
+            proposedShape.endX = x;
+            proposedShape.endY = y;
+            break;
+          case 3:
+            proposedShape.startX = x;
+            proposedShape.endY = y;
+            break;
+        }
+      } else if (proposedShape.mode === 'triangle') {
+        switch (this.activeHandleIndex) {
+          case 0:
+            proposedShape.startX = x;
+            proposedShape.startY = y;
+            break;
+          case 1:
+            proposedShape.endX = x;
+            proposedShape.endY = y;
+            break;
+          case 2:
+            const topX = proposedShape.startX!;
+            proposedShape.endX = topX - (x - topX);
+            proposedShape.endY = y;
+            break;
+        }
+      } else if (proposedShape.mode === 'free' && proposedShape.points) {
+        proposedShape.points[this.activeHandleIndex] = { x, y };
+      }
+
+      const idx = this.polygons.indexOf(this.resizingShape);
+      if (
+        this.isShapeInsideBoundary(proposedShape) &&
+        !this.doesShapeOverlap(proposedShape, idx)
+      ) {
+        Object.assign(this.resizingShape, proposedShape);
+      }
+      this.redraw();
+      return;
+    }
+    if (this.draggingShape) {
+      const dx = x - this.dragOffset.x;
+      const dy = y - this.dragOffset.y;
+
+      if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
+        this.draggingShape.points = this.originalPoints.map((p) => ({
+          x: p.x + dx,
+          y: p.y + dy,
+        }));
+      } else {
+        const width =
+          (this.draggingShape.endX ?? this.draggingShape.startX!) -
+          this.draggingShape.startX!;
+        const height =
+          (this.draggingShape.endY ?? this.draggingShape.startY!) -
+          this.draggingShape.startY!;
+
+        this.draggingShape.startX = this.originalPoints[0].x + dx;
+        this.draggingShape.startY = this.originalPoints[0].y + dy;
+        this.draggingShape.endX = this.draggingShape.startX + width;
+        this.draggingShape.endY = this.draggingShape.startY + height;
+      }
+
+      this.redraw();
     }
 
     if (this.isDrawingShape && this.currentShape && this.shapeMode !== 'free') {
@@ -325,11 +734,20 @@ private HANDLE_SIZE = 8;
       this.currentShape.endY = y;
       this.redraw();
     }
-    // if (this.isDrawingShape && this.shapeMode === 'free') {
-    //   this.currentPolygon.push({ x, y });
-    //   this.redraw();
-    //   return;
-    // }
+  }
+  originalCoordinates() {
+    if (this.draggingShape) {
+      if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
+        this.draggingShape.points = this.originalPoints.map((p) => ({
+          ...p,
+        }));
+      } else {
+        this.draggingShape.startX = this.originalPoints[0].x;
+        this.draggingShape.startY = this.originalPoints[0].y;
+        this.draggingShape.endX = this.originalPoints[1].x;
+        this.draggingShape.endY = this.originalPoints[1].y;
+      }
+    }
   }
   @HostListener('contextmenu', ['$event'])
   onRightClick(event: MouseEvent) {
@@ -337,65 +755,134 @@ private HANDLE_SIZE = 8;
   }
   @HostListener('mouseup', ['$event'])
   onMouseUp(event: MouseEvent) {
+    if (event.target !== this.mapCanvas.nativeElement) return;
     this.suppressClick = this.dragDistance > this.CLICK_DRAG_THRESHOLD;
-
-    if (this.isDraggingShape) {
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-    }
-
-    if (this.isDrawingShape && this.currentShape) {
-      if (this.shapeMode !== 'free') {
-        if (this.dragDistance <= this.CLICK_DRAG_THRESHOLD) {
-          if (this.shapeMode === 'circle') {
-            this.currentShape.radius = this.circleRadius;
-          } else if (this.shapeMode === 'square') {
-            this.currentShape.endX =
-              this.currentShape.startX! + this.squareSize;
-            this.currentShape.endY =
-              this.currentShape.startY! + this.squareSize;
-          } else if (this.shapeMode === 'triangle') {
-            this.currentShape.endX =
-              this.currentShape.startX! + this.triangleBase;
-            this.currentShape.endY =
-              this.currentShape.startY! + this.triangleHeight;
-          }
-        }
-
-        if (
-          this.isShapeInsideBoundary(this.currentShape) &&
-          !this.doesShapeOverlap(this.currentShape)
-        ) {
-          this.nameChange = true;
-          const userName = prompt('Enter name for this shape:', 'My Fence');
-          if (userName) {
-            this.currentShape.name = userName;
-          } else {
-            this.currentShape.name = `Fence-${Date.now()}`; // fallback unique name
-          }
-          this.nameChange = false;
-          this.polygons.push({ ...this.currentShape });
-          localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        } else {
-          console.warn('Shape outside boundary or overlaps, not saved!');
-        }
-      }
-      this.currentShape = null;
-    }
-
     this.isPanning = false;
-    this.isDraggingShape = false;
+    console.log('dragging shape ', this.draggingShape);
+    if (this.resizingShape) {
+      const idx = this.polygons.indexOf(this.resizingShape);
+      if (
+        !this.isShapeInsideBoundary(this.resizingShape) ||
+        this.doesShapeOverlap(this.resizingShape, idx)
+      ) {
+        alert('Invalid resize: outside boundary or overlaps!');
+        this.restoreOriginalShape(this.resizingShape);
+        // 🔹 revert if free polygon
+        if (this.resizingShape.mode === 'free' && this.originalPoints.length) {
+          this.resizingShape.points = this.originalPoints.map((p) => ({
+            ...p,
+          }));
+        } else {
+          this.originalCoordinates();
+        }
+      } else {
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        this.carSocket.updateFences(this.polygons);
+      }
+      this.currentPolygon = [];
+      this.currentShape = null;
+      this.resizingShape = null;
+      this.activeHandleIndex = null;
+      this.originalPoints = [];
+      this.isDrawingShape = false;
+      this.redraw();
+      return;
+    }
+    if (this.draggingShape) {
+      const idx = this.polygons.indexOf(this.draggingShape);
+      if (!this.isShapeInsideBoundary(this.draggingShape)) {
+        this.originalCoordinates();
+        alert('Invalid move: shape outside boundry');
+      } else if (this.doesShapeOverlap(this.draggingShape, idx)) {
+        // revert back
+        this.originalCoordinates();
+        alert('Invalid move: shape overlaps another!');
+      } else {
+        console.log('POLYGON', this.polygons);
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        this.carSocket.updateFences(this.polygons);
+      }
+      this.isDrawingShape = false;
+      this.currentPolygon = [];
+      this.draggingShape = null;
+      this.redraw();
+      return;
+    }
+
+    if (!this.isDrawingShape || !this.currentShape) return;
+    if (this.currentShape.mode === 'circle') {
+      const dx =
+        (this.currentShape.endX ?? this.currentShape.startX!) -
+        this.currentShape.startX!;
+      const dy =
+        (this.currentShape.endY ?? this.currentShape.startY!) -
+        this.currentShape.startY!;
+      this.currentShape.radius = Math.hypot(dx, dy);
+      if (!dx && !dy) {
+        this.currentShape.radius = this.circleRadius;
+        this.currentShape.endX = this.currentShape.startX! + this.circleRadius;
+        this.currentShape.endY = this.currentShape.startY!; // set so bbox works
+      }
+    } else if (
+      this.currentShape.mode === 'square' &&
+      this.currentShape.startX === this.currentShape.endX &&
+      this.currentShape.startY === this.currentShape.endY
+    ) {
+      this.currentShape.endX = this.currentShape.startX! + this.squareSize;
+      this.currentShape.endY = this.currentShape.startY! + this.squareSize;
+    } else if (
+      this.currentShape.mode === 'triangle' &&
+      this.currentShape.startX === this.currentShape.endX &&
+      this.currentShape.startY === this.currentShape.endY
+    ) {
+      this.currentShape.endX = this.currentShape.startX! + this.triangleBase;
+      this.currentShape.endY = this.currentShape.startY! + this.triangleHeight;
+    }
+
+    if (
+      this.isShapeInsideBoundary(this.currentShape) &&
+      !this.doesShapeOverlap(this.currentShape)
+    ) {
+      let userName: any = prompt('Enter name for this shape:', `My Fence`);
+      if (!userName || userName.trim() === '') {
+        // user pressed Cancel or empty
+        this.currentShape = null;
+        this.currentPolygon = [];
+        this.isDrawingShape = false;
+        this.redraw();
+        return;
+      }
+      while (this.isDuplicateName(userName)) {
+        userName =
+          prompt('Name exists, enter another:', userName) ||
+          `Fence-${Date.now()}`;
+      }
+      this.currentShape.name = userName.trim();
+      this.polygons.push({ ...this.currentShape });
+      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      this.carSocket.updateFences(this.polygons);
+    } else {
+      alert('Invalid shape: outside boundary or overlaps!');
+    }
+    this.currentPolygon = [];
+    this.currentShape = null;
     this.isDrawingShape = false;
-    this.selectedShapeIndex = null;
     this.redraw();
   }
+
   renameShape(index: number) {
     this.nameChange = false;
     const shape = this.polygons[index];
     const newName = prompt('Enter new name:', shape.name || '');
-    if (newName && newName.trim() !== '') {
-      shape.name = newName.trim();
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-      this.redraw();
+    if (!this.isDuplicateName(newName)) {
+      if (newName && newName.trim() !== '') {
+        shape.name = newName.trim();
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        this.carSocket.updateFences(this.polygons);
+        this.redraw();
+      }
+    } else {
+      alert('Name already exist');
     }
   }
   @HostListener('dblclick', ['$event'])
@@ -413,20 +900,44 @@ private HANDLE_SIZE = 8;
     if (this.shapeMode === 'free' && this.currentPolygon.length > 2) {
       const shape: Shape = { mode: 'free', points: [...this.currentPolygon] };
 
-      if (this.isShapeInsideBoundary(shape) && !this.doesShapeOverlap(shape)) {
-        const userName = prompt('Enter name for this shape:', 'My Fence');
-        shape.name =
-          userName && userName.trim() !== ''
-            ? userName.trim()
-            : `Fence-${Date.now()}`;
-        this.polygons.push(shape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        // return;
-      } else {
+      if (!this.isShapeInsideBoundary(shape)) {
         alert('Polygon is outside allowed boundary!');
+        this.currentPolygon = [];
+        this.isDrawingShape = false;
+        this.redraw();
+        return;
+      }
+      if (this.doesShapeOverlap(shape)) {
+        alert('Invalid polygon: overlaps with existing shape!');
+        this.currentPolygon = [];
+        this.isDrawingShape = false;
+        this.redraw();
+        return;
       }
 
+      // naming + save
+      let userName = prompt('Enter name for this shape:', 'My Fence');
+      if (!userName || userName.trim() === '') {
+        this.currentShape = null;
+        this.currentPolygon = [];
+        this.isDrawingShape = false;
+        this.redraw();
+        return;
+      }
+      if (this.isDuplicateName(userName.trim())) {
+        alert(
+          'A shape with this name already exists. Please choose another name.'
+        );
+        return;
+      }
+
+      shape.name = userName.trim();
+      this.polygons.push(shape);
+      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      this.carSocket.updateFences(this.polygons);
       this.currentPolygon = [];
+      this.isDrawingShape = false;
+      this.currentShape = null;
       this.redraw();
     }
   }
@@ -461,30 +972,29 @@ private HANDLE_SIZE = 8;
     const y = (canvasY - this.offsetY) / this.scale;
     return { x, y };
   }
-  private moveShape(shape: Shape, dx: number, dy: number) {
-    const movedShape: Shape = JSON.parse(JSON.stringify(shape));
-
-    if (movedShape.mode === 'free' && movedShape.points) {
-      movedShape.points = movedShape.points.map((p) => ({
-        x: p.x + dx,
-        y: p.y + dy,
-      }));
-    } else {
-      movedShape.startX! += dx;
-      movedShape.startY! += dy;
-      if (movedShape.endX !== undefined) movedShape.endX += dx;
-      if (movedShape.endY !== undefined) movedShape.endY += dy;
+  private getShapeCorners(shape: Shape): { x: number; y: number }[] {
+    if (shape.mode === 'square') {
+      return [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: shape.startX!, y: shape.endY! },
+      ];
+    } else if (shape.mode === 'triangle') {
+      const midX = shape.startX! * 2 - shape.endX!;
+      const midY = shape.endY!;
+      return [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: midX, y: midY },
+      ];
     }
-
-    if (
-      this.isShapeInsideBoundary(movedShape) &&
-      !this.doesShapeOverlap(movedShape, this.selectedShapeIndex)
-    ) {
-      Object.assign(shape, movedShape);
-    }
+    return [];
   }
+
   private redraw() {
     const canvas = this.mapCanvas.nativeElement;
+
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -497,33 +1007,120 @@ private HANDLE_SIZE = 8;
       this.offsetY
     );
     this.ctx.imageSmoothingEnabled = this.scale <= 1;
-
+    const dpr = window.devicePixelRatio || 1;
+    const size = this.handleSize * dpr;
     this.ctx.drawImage(this.mapImage.nativeElement, 0, 0);
 
-    this.polygons.forEach((shape) => {
+    // existing saved shapes
+    this.polygons.forEach((shape, i) => {
       if (this.isShapeInsideBoundary(shape)) {
         this.drawShape(shape, 'rgba(255,0,0,0.3)', 'red');
         if (shape.name) this.drawShapeLabel(shape);
       }
     });
-    if (this.shapeMode === 'free' && this.currentPolygon.length) {
-      if (this.nameChange) {
-        return;
-      } else {
+    if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
+      if (
+        this.shapeMode === 'free' &&
+        this.currentPolygon.length > 0 &&
+        !this.nameChange
+      ) {
         const tempShape: Shape = { mode: 'free', points: this.currentPolygon };
         this.drawShape(tempShape, 'transparent', 'green');
+      } else if (this.currentShape && !this.currentShape.name) {
+        this.drawShape(this.currentShape, 'transparent', 'green');
       }
-    } else if (
-      this.currentShape &&
-      this.isShapeInsideBoundary(this.currentShape)
-    ) {
-      // this.drawShape(this.currentShape, 'rgba(0,255,0,0.3)', 'green');
     }
-
     this.ctx.beginPath();
     this.ctx.lineWidth = 3 / this.scale;
     this.ctx.stroke();
+    this.drawRobot();
+    if (this.hoveredShape) {
+      this.ctx.fillStyle = 'red';
+      this.ctx.strokeStyle = 'black';
+
+      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
+        const handle = {
+          x: this.hoveredShape.startX! + this.hoveredShape.radius,
+          y: this.hoveredShape.startY!,
+        };
+        this.ctx.beginPath();
+        this.ctx.arc(handle.x, handle.y, this.handleSize, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+      } else if (
+        this.hoveredShape.mode === 'square' ||
+        this.hoveredShape.mode === 'triangle'
+      ) {
+        const corners = this.getShapeCorners(this.hoveredShape);
+        for (let c of corners) {
+          this.ctx.beginPath();
+          this.ctx.rect(
+            c.x - this.handleSize / 2,
+            c.y - this.handleSize / 2,
+            this.handleSize,
+            this.handleSize
+          );
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+      } else if (
+        this.hoveredShape.mode === 'free' &&
+        this.hoveredShape.points
+      ) {
+        for (let p of this.hoveredShape.points) {
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, this.handleSize, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+      }
+
+      this.ctx.restore();
+    }
+    console.log(this.showPath,this.robotPath.length);
+    
+    if (this.showPath && this.robotPath.length > 1) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      const first = this.toCanvasCoords(
+        this.robotPath[0].x,
+        this.robotPath[0].y
+      );
+      this.ctx.moveTo(first.x, first.y);
+
+      for (let i = 1; i < this.robotPath.length; i++) {
+        const p = this.toCanvasCoords(this.robotPath[i].x, this.robotPath[i].y);
+        this.ctx.lineTo(p.x, p.y);
+      }
+
+      this.ctx.strokeStyle = 'blue';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+    this.restrictionPoints.forEach((p) => {
+      const canvasPoint = this.toCanvasCoords(p.x, p.y);
+      const size = 20;
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.arc(canvasPoint.x, canvasPoint.y, size, 0, 2 * Math.PI);
+      this.ctx.fillStyle = 'rgba(255,0,0,0.3)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'red';
+      this.ctx.lineWidth = 3;
+      this.ctx.stroke();
+
+      // draw cross line
+      this.ctx.beginPath();
+      this.ctx.moveTo(canvasPoint.x - size / 1.5, canvasPoint.y - size / 1.5);
+      this.ctx.lineTo(canvasPoint.x + size / 1.5, canvasPoint.y + size / 1.5);
+      this.ctx.stroke();
+
+      this.ctx.restore();
+    });
   }
+
   private drawShapeLabel(shape: Shape) {
     let x = 0,
       y = 0;
@@ -582,15 +1179,54 @@ private HANDLE_SIZE = 8;
       this.ctx.lineTo(midX, midY);
       this.ctx.closePath();
     } else if (shape.mode === 'free' && shape.points) {
+      this.ctx.beginPath();
+
       this.ctx.moveTo(shape.points[0].x, shape.points[0].y);
-      for (let i = 1; i < shape.points.length; i++)
+      for (let i = 1; i < shape.points.length; i++) {
         this.ctx.lineTo(shape.points[i].x, shape.points[i].y);
-      // this.ctx.closePath();
+      }
+      if (shape.name) {
+        this.ctx.closePath();
+      }
     }
     this.ctx.fillStyle = fillStyle;
     this.ctx.fill();
     this.ctx.strokeStyle = strokeStyle;
     this.ctx.lineWidth = 2 / this.scale;
     this.ctx.stroke();
+  }
+  private drawRobot() {
+    if (!this.robot) return;
+
+    const { x, y } = this.toCanvasCoords(this.robot.x, this.robot.y);
+
+    const size = 15 / this.scale;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, size, 0, Math.PI * 2);
+
+    if (this.robot.fenceName) {
+      this.ctx.fillStyle = 'orange';
+    } else {
+      this.ctx.fillStyle = 'blue';
+    }
+
+    this.ctx.strokeStyle = 'black';
+    this.ctx.lineWidth = 2 / this.scale;
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.fillStyle = 'black';
+    this.ctx.font = `${14 / this.scale}px Arial`;
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('', x, y - 15 / this.scale);
+    if (this.robot.fenceName) {
+      this.ctx.fillStyle = 'purple';
+      this.ctx.font = `${14 / this.scale}px Arial`;
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(
+        `Fence: ${this.robot.fenceName}`,
+        x,
+        y + 25 / this.scale
+      );
+    }
   }
 }

@@ -7,4 +7,8 @@ export interface Shape {
   endY?: number;
   radius?: any;
   name?: string;
+  canvasX?: number; // <-- add this
+  canvasY?: number;
+  isRobot?: any;
+  vertices?: { x: number; y: number }[];
 }

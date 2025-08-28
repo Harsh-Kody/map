@@ -1,10 +1,7 @@
 <div class="map-container">
-  <img #mapImage id="map-image" src="assets/download.png" hidden />
+  <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
   <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
-  <div class="resize-handle top-left"></div>
-  <div class="resize-handle top-right"></div>
-  <div class="resize-handle bottom-left"></div>
-  <div class="resize-handle bottom-right"></div>
+
   <div class="controls">
     <button (click)="selectShape('free')">Free</button>
     <button (click)="selectShape('circle')">Circle</button>
@@ -14,8 +11,11 @@
     <button (click)="zoomOut()">-</button>
     <button (click)="resetView()">Reset</button>
     <button (click)="clearGeofences()">Clear Geofences</button>
-
-    <div class="shape-options" *ngIf="shapeMode !== 'free'">    
+    <button (click)="toggleDeleteMode()">
+      {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
+    </button>
+    <button (click)="togglePath()">Toggle Path</button>
+    <div class="shape-options" *ngIf="shapeMode !== 'free'">
       <ng-container [ngSwitch]="shapeMode">
         <div *ngSwitchCase="'circle'">
           <label

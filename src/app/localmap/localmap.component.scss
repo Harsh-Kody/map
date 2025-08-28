@@ -57,3 +57,13 @@
 .bottom-right {
   cursor: nwse-resize;
 }
+.corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: red;
+  border: 2px solid white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}

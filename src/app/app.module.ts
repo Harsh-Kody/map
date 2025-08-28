@@ -5,11 +5,13 @@ import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { LocalmapComponent } from './localmap/localmap.component';
 import { FormsModule } from '@angular/forms';
+import { UploadMapComponent } from './upload-map/upload-map.component';
 
 @NgModule({
   declarations: [
     AppComponent,
-    LocalmapComponent
+    LocalmapComponent,
+    UploadMapComponent
   ],
   imports: [
     BrowserModule,
