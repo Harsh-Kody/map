@@ -6,11 +6,13 @@ import {
   OnInit,
   ViewChild,
 } from '@angular/core';
-import { Shape } from '../modal/shape';
+import { Shape } from '../model/shape';
 import { LocalmapService } from '../services/localmap.service';
 import { map } from 'rxjs';
-import { RobotLocation } from '../modal/RobotLocation';
+import { RobotLocation } from '../model/RobotLocation';
 import { MapStorageService } from '../services/map-storage.service';
+import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
+import { FenceModalComponent } from '../fence-modal/fence-modal.component';
 
 @Component({
   selector: 'app-localmap',
@@ -59,7 +61,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   robotPath: { x: number; y: number }[] = [];
   constructor(
     private carSocket: LocalmapService,
-    private mapStorage: MapStorageService
+    private mapStorage: MapStorageService,
+    private modalService: NgbModal
   ) {}
   private boundaryMinX = 73.88825541619121;
   private boundaryMaxX = 5069.783352337514;
@@ -79,11 +82,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       console.log(objectURL);
       this.mapImageSrc = objectURL;
     }
-    this.carSocket.getCarLocation().subscribe((data) => {   
-  
+    this.carSocket.getCarLocation().subscribe((data) => {
       if (this.showPath) {
-          this.robotPath.push({ x: data.x, y: data.y });
-        }
+        this.robotPath.push({ x: data.x, y: data.y });
+      }
       data.x = Math.max(this.boundaryMinX, Math.min(this.boundaryMaxX, data.x));
       data.y = Math.max(this.boundaryMinY, Math.min(this.boundaryMaxY, data.y));
       this.robot = data;
@@ -95,14 +97,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         }
       }
       if (data.type === 'add') {
-        // ✅ add new restriction
         this.restrictionPoints.push({
           id: data.id,
           x: data.x,
           y: data.y,
         });
       } else if (data.type === 'remove') {
-        // ✅ remove restriction by id
         this.restrictionPoints = this.restrictionPoints.filter(
           (p) => p.id !== data.id
         );
@@ -157,15 +157,53 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
   }
   togglePath() {
-    console.log("toggle path",this.showPath);
     this.showPath = !this.showPath;
-
-    // Clear path if hiding
     if (!this.showPath) {
       this.robotPath = [];
       this.redraw();
     }
   }
+  openFenceModal(shape?: Shape) {
+    const modalRef = this.modalService.open(FenceModalComponent, {
+      backdrop: 'static',
+    });
+
+    modalRef.componentInstance.fenceData = shape
+      ? {
+          name: shape.name || '',
+          isDraggable: !!shape.isDraggable,
+          isResizable: !!shape.isResizable,
+        }
+      : {
+          name: '',
+          isDraggable: false,
+          isResizable: false,
+        };
+
+    modalRef.result
+      .then((result) => {
+        if (shape) {
+          shape.name = result.name;
+          shape.isDraggable = result.isDraggable;
+          shape.isResizable = result.isResizable;
+        } else if (this.currentShape) {
+          const newShape: Shape = {
+            ...this.currentShape,
+            name: result.name,
+            isDraggable: result.isDraggable,
+            isResizable: result.isResizable,
+          };
+          this.polygons.push(newShape);
+          this.currentShape = null; 
+        }
+
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        this.carSocket.updateFences(this.polygons);
+        this.redraw(); 
+      })
+      .catch(() => {});
+  }
+
   private doesShapeOverlap(
     newShape: Shape,
     ignoreIndex: number | null = null
@@ -313,7 +351,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     img.onload = () => {
       this.fitImageToCanvas();
       const saved = localStorage.getItem('geoFences');
-      console.log(saved, 'saved');
       this.polygons = saved ? JSON.parse(saved) : [];
       this.carSocket.updateFences(this.polygons);
       this.redraw();
@@ -380,7 +417,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.redraw();
       return;
     }
-
     this.currentShape = {
       mode: this.shapeMode,
       startX: x,
@@ -767,7 +803,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ) {
         alert('Invalid resize: outside boundary or overlaps!');
         this.restoreOriginalShape(this.resizingShape);
-        // 🔹 revert if free polygon
         if (this.resizingShape.mode === 'free' && this.originalPoints.length) {
           this.resizingShape.points = this.originalPoints.map((p) => ({
             ...p,
@@ -843,24 +878,24 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.isShapeInsideBoundary(this.currentShape) &&
       !this.doesShapeOverlap(this.currentShape)
     ) {
-      let userName: any = prompt('Enter name for this shape:', `My Fence`);
-      if (!userName || userName.trim() === '') {
-        // user pressed Cancel or empty
-        this.currentShape = null;
-        this.currentPolygon = [];
-        this.isDrawingShape = false;
-        this.redraw();
-        return;
-      }
-      while (this.isDuplicateName(userName)) {
-        userName =
-          prompt('Name exists, enter another:', userName) ||
-          `Fence-${Date.now()}`;
-      }
-      this.currentShape.name = userName.trim();
-      this.polygons.push({ ...this.currentShape });
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-      this.carSocket.updateFences(this.polygons);
+      this.openFenceModal();
+      // let userName: any = prompt('Enter name for this shape:', `My Fence`);
+      // if (!userName || userName.trim() === '') {
+      //   this.currentShape = null;
+      //   this.currentPolygon = [];
+      //   this.isDrawingShape = false;
+      //   this.redraw();
+      //   return;
+      // }
+      // while (this.isDuplicateName(userName)) {
+      //   userName =
+      //     prompt('Name exists, enter another:', userName) ||
+      //     `Fence-${Date.now()}`;
+      // }
+      // this.currentShape.name = userName.trim();
+      // this.polygons.push({ ...this.currentShape });
+      // localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      // this.carSocket.updateFences(this.polygons);
     } else {
       alert('Invalid shape: outside boundary or overlaps!');
     }
@@ -1077,8 +1112,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.ctx.restore();
     }
-    console.log(this.showPath,this.robotPath.length);
-    
+
     if (this.showPath && this.robotPath.length > 1) {
       this.ctx.save();
       this.ctx.beginPath();

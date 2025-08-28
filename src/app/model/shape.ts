@@ -11,4 +11,6 @@ export interface Shape {
   canvasY?: number;
   isRobot?: any;
   vertices?: { x: number; y: number }[];
+  isDraggable?: boolean;
+  isResizable?: boolean;
 }

@@ -1,0 +1,43 @@
+<div class="modal-header">
+  <h4 class="modal-title">
+    {{ fenceData.name ? "Edit Fence" : "Create Fence" }}
+  </h4>
+  <button
+    type="button"
+    class="btn-close"
+    aria-label="Close"
+    (click)="cancel()"
+  ></button>
+</div>
+
+<div class="modal-body">
+  <div class="mb-3">
+    <label>Name</label>
+    <input type="text" [(ngModel)]="fenceData.name" class="form-control" />
+  </div>
+
+  <div class="form-check">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      [(ngModel)]="fenceData.isDraggable"
+    />
+    <label class="form-check-label">Draggable</label>
+  </div>
+
+  <div class="form-check">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      [(ngModel)]="fenceData.isResizable"
+    />
+    <label class="form-check-label">Resizable</label>
+  </div>
+</div>
+
+<div class="modal-footer">
+  <button type="button" class="btn btn-secondary" (click)="cancel()">
+    Cancel
+  </button>
+  <button type="button" class="btn btn-primary" (click)="save()">Save</button>
+</div>

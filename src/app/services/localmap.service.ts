@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
-import { RobotLocation } from '../modal/RobotLocation';
-import { Shape } from '../modal/shape';
+import { RobotLocation } from '../model/RobotLocation';
+import { Shape } from '../model/shape';
 
 @Injectable({
   providedIn: 'root',
@@ -26,7 +26,6 @@ export class LocalmapService {
     });
   }
   updateFences(fences: Shape[]) {
-    console.log("emiting ",fences);
     this.socket.emit('update_fences', fences);
   }
 }

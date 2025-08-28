@@ -1,6 +1,21 @@
 <div class="upload-container">
-  <h2>Upload Map Image</h2>
-  <input type="file" (change)="onFileSelected($event)" accept="image/*" />
-  <button (click)="onUpload()">Upload</button>
-  <p *ngIf="errorMessage" class="error">{{ errorMessage }}</p>
+  <input type="file" accept="image/*" (change)="onFileSelected($event)" />
+
+  <div *ngIf="showCropper">
+    <image-cropper
+      [imageChangedEvent]="imageChangedEvent"
+      [maintainAspectRatio]="false"
+      format="png"
+      (imageCropped)="imageCropped($event)">
+    </image-cropper>
+
+    <div *ngIf="croppedImage">
+      <h4>Preview:</h4>
+      <img [src]="croppedImage" style="max-width: 300px; border:1px solid #ccc;" />
+    </div>
+
+    <button (click)="onUpload()">Save & Continue</button>
+  </div>
+
+  <div *ngIf="errorMessage" class="error">{{ errorMessage }}</div>
 </div>
