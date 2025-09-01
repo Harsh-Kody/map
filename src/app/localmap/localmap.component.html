@@ -1,7 +1,6 @@
 <div class="map-container">
   <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
   <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
-
   <div class="controls">
     <button (click)="selectShape('free')">Free</button>
     <button (click)="selectShape('circle')">Circle</button>
@@ -15,6 +14,16 @@
       {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
     </button>
     <button (click)="togglePath()">Toggle Path</button>
+    <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
+    <div class="fence-log">
+      <h3>Fence Entry Log</h3>
+      <ul>
+        <li *ngFor="let log of fenceLog">
+          {{ log.robot }} → FenceName - '{{ log.fenceName }}' at
+          {{ log.time | date : "shortTime" }}
+        </li>
+      </ul>
+    </div>
     <div class="shape-options" *ngIf="shapeMode !== 'free'">
       <ng-container [ngSwitch]="shapeMode">
         <div *ngSwitchCase="'circle'">
@@ -38,3 +47,64 @@
     </div>
   </div>
 </div>
+<ng-template #fenceModal let-modal>
+  <form
+    [formGroup]="mapForm"
+    #mapFormDirective="ngForm"
+    (ngSubmit)="onSubmit(modal)"
+  >
+    <div class="modal-header">
+      <h5 class="modal-title">
+        {{ isEditing ? "Edit Fence" : "Create Fence" }}
+      </h5>
+      <button
+        type="button"
+        class="btn-close"
+        aria-label="Close"
+        (click)="modal.dismiss()"
+      ></button>
+    </div>
+
+    <div class="modal-body">
+      <div class="mb-3">
+        <label>Fence Name</label>
+        <input type="text" class="form-control" formControlName="fenceName" />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('fenceName','required')) {
+        <div class="text-danger">Fence Name is required</div>
+        }@else if (hasError('fenceName','duplicateName')) {
+        <div class="text-danger">Please enter a unique name</div>
+        } }
+      </div>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="checkbox"
+          id="draggableCheck"
+          formControlName="isDrag"
+        />
+        <label class="form-check-label" for="draggableCheck">Draggable</label>
+      </div>
+
+      <div class="form-check">
+        <input
+          class="form-check-input"
+          type="checkbox"
+          id="resizableCheck"
+          formControlName="isResize"
+        />
+        <label class="form-check-label" for="resizableCheck">Resizable</label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="modal.dismiss()">
+        Cancel
+      </button>
+      <button class="btn btn-primary">
+        {{ isEditing ? "Save Changes" : "Create" }}
+      </button>
+    </div>
+  </form>
+</ng-template>

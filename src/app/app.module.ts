@@ -4,7 +4,7 @@ import { BrowserModule } from '@angular/platform-browser';
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { LocalmapComponent } from './localmap/localmap.component';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { UploadMapComponent } from './upload-map/upload-map.component';
 import { ImageCropperModule } from 'ngx-image-cropper';
 import { FenceModalComponent } from './fence-modal/fence-modal.component';
@@ -19,6 +19,7 @@ import { FenceModalComponent } from './fence-modal/fence-modal.component';
     BrowserModule,
     AppRoutingModule,
     FormsModule,
+    ReactiveFormsModule,
     ImageCropperModule
   ],
   providers: [],

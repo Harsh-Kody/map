@@ -6,7 +6,7 @@ import { UploadMapComponent } from './upload-map/upload-map.component';
 const routes: Routes = [
   { path: 'upload-map', component: UploadMapComponent },
   { path: 'localmap', component: LocalmapComponent },
-  { path: '', redirectTo: 'upload-map', pathMatch: 'full' },
+  { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
 ];
 
 @NgModule({

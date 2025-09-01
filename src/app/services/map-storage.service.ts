@@ -23,7 +23,7 @@ export class MapStorageService {
     this.dbPromise = openDB<MapDB>('MapDatabase', 1, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('maps')) {
-          db.createObjectStore('maps', { keyPath: 'id' }); // ✅ keyPath
+          db.createObjectStore('maps', { keyPath: 'id' }); 
         }
       },
     });
@@ -31,7 +31,7 @@ export class MapStorageService {
 
   async saveMap(key: string, file: File): Promise<void> {
     const db = await this.dbPromise;
-    await db.put('maps', { id: key, file }); // ✅ store with id
+    await db.put('maps', { id: key, file }); 
   }
 
   async getMap(key: string): Promise<Blob | undefined> {
@@ -42,6 +42,8 @@ export class MapStorageService {
 
   async deleteMap(key: string): Promise<void> {
     const db = await this.dbPromise;
-    await db.delete('maps', key);
+    await db.clear('maps');
+    localStorage.removeItem('mapHash'); 
+    localStorage.removeItem('geoFences'); 
   }
 }

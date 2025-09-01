@@ -14,9 +14,9 @@ export class LocalmapService {
     this.socket = io('http://localhost:3000');
   }
 
-  getCarLocation(): Observable<RobotLocation> {
+  getCarLocation(): Observable<RobotLocation[]> {
     return new Observable((observer) => {
-      this.socket.on('robot_update', (data: RobotLocation) => {
+      this.socket.on('robot_update', (data: RobotLocation[]) => {
         observer.next(data);
       });
 

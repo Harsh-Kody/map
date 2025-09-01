@@ -13,4 +13,6 @@ export interface Shape {
   vertices?: { x: number; y: number }[];
   isDraggable?: boolean;
   isResizable?: boolean;
+  draggable ?: any
+  resizable ?: any
 }

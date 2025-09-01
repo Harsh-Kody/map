@@ -15,4 +15,5 @@ export interface RobotLocation {
   fenceName?:any
   type?: any
   id?:any
+  name?:any
 }
