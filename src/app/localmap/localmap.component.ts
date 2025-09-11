@@ -73,6 +73,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private boundaryMaxX = 5069.783352337514;
   private boundaryMinY = 144.65222348916728;
   private boundaryMaxY = 3551.7673888255417;
+  private readonly MAP_W = 91;
+  private readonly MAP_H = 128.7;
+  private readonly WORLD_SCALE = 25.71;
+  coord: any;
   robots: any[] = [];
   lastFences: { [robotId: number]: string | null } = {};
   fenceLog: { robot: string; fenceName: string; time: Date }[] = [];
@@ -98,43 +102,27 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const objectURL = URL.createObjectURL(blob);
       this.mapImageSrc = objectURL;
     }
-    this.carSocket.getCarLocation().subscribe((robotList) => {
+    this.carSocket.getRobotLocation().subscribe((robot) => {
       // if (this.showPath) {
       //   this.robotPath.push({ x: data.x, y: data.y });
       // }
-      this.robots = robotList.map((r) => {
-        // keep inside boundaries
-        r.x = Math.max(this.boundaryMinX, Math.min(this.boundaryMaxX, r.x));
-        r.y = Math.max(this.boundaryMinY, Math.min(this.boundaryMaxY, r.y));
+      // console.log(robot , "robot coodinates");
+      // robot.x = Math.max(
+      //   this.boundaryMinX,
+      //   Math.min(this.boundaryMaxX, robot.x)
+      // );
+      // robot.y = Math.max(
+      //   this.boundaryMinY,
+      //   Math.min(this.boundaryMaxY, robot.y)
+      // );
 
-        // detect if robot is inside a fence
-        r.fenceName = null;
-        for (let shape of this.polygons) {
-          const canvasPoint = this.toCanvasCoords(r.x, r.y);
-          if (this.isPointInShape(canvasPoint, shape)) {
-            r.fenceName = shape.name || null;
-            break;
-          }
-        }
-
-        // log entry if fence changed
-        if (r.fenceName && r.fenceName !== this.lastFences[r.id]) {
-          const entryTime = new Date();
-          this.fenceLog.push({
-            robot: r.name,
-            fenceName: r.fenceName,
-            time: entryTime,
-          });
-          console.log(
-            `🤖 ${r.name} entered ${
-              r.fenceName
-            } at ${entryTime.toLocaleTimeString()}`
-          );
-        }
-
-        this.lastFences[r.id] = r.fenceName;
-        return r;
-      });
+      // replace or update in robots[]
+      const idx = this.robots.findIndex((r) => r.id === robot.id);
+      if (idx >= 0) {
+        this.robots[idx] = robot;
+      } else {
+        this.robots.push(robot);
+      }
 
       this.redraw();
     });
@@ -148,226 +136,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     });
   }
 
-  private isShapeInsideBoundary(shape: Shape): boolean {
-    if (shape.mode === 'free' && shape.points) {
-      return shape.points.every((p) => this.isInsideBoundary(p.x, p.y));
-    } else if (shape.mode === 'circle') {
-      const r =
-        shape.radius ??
-        Math.sqrt(
-          Math.pow((shape.endX ?? shape.startX)! - shape.startX!, 2) +
-            Math.pow((shape.endY ?? shape.startY)! - shape.startY!, 2)
-        );
-      return (
-        this.isInsideBoundary(shape.startX! - r, shape.startY! - r) &&
-        this.isInsideBoundary(shape.startX! + r, shape.startY! + r)
-      );
-    } else if (shape.mode === 'square') {
-      const corners = [
-        { x: shape.startX!, y: shape.startY! },
-        { x: shape.endX!, y: shape.startY! },
-        { x: shape.endX!, y: shape.endY! },
-        { x: shape.startX!, y: shape.endY! },
-      ];
-      return corners.every((c) => this.isInsideBoundary(c.x, c.y));
-    } else if (shape.mode === 'triangle') {
-      const midX = shape.startX! * 2 - shape.endX!;
-      const midY = shape.endY!;
-      const vertices = [
-        { x: shape.startX!, y: shape.startY! },
-        { x: shape.endX!, y: shape.endY! },
-        { x: midX, y: midY },
-      ];
-      return vertices.every((v) => this.isInsideBoundary(v.x, v.y));
-    }
-    return false;
-  }
-  public isDuplicateName(
-    name: string | null,
-    ignoreShape?: Shape | null
-  ): boolean {
-    if (!name) return false;
-    const lower = name.toLowerCase();
-    const found = this.polygons.some(
-      (shape) => shape !== ignoreShape && shape.name?.toLowerCase() === lower
-    );
-    this.isDuplicate = found;
-    if (found) {
-      this.isSubmit = true;
-    }
-    return found;
-  }
-
-  isDupliateNameValidator = (control: any) => {
-    if (!control.value) return null;
-    const valLower = control.value.toLowerCase();
-    const isDuplicate = this.polygons.some(
-      (shape) =>
-        shape !== this.selectedFence && shape.name?.toLowerCase() === valLower
-    );
-    return isDuplicate ? { duplicateName: true } : null;
-  };
-
-  toggleDeleteMode() {
-    if (this.polygons.length !== 0) {
-      this.deleteMode = !this.deleteMode;
-    }
-  }
-  togglePath() {
-    this.showPath = !this.showPath;
-    if (!this.showPath) {
-      this.robotPath = [];
-      this.redraw();
-    }
-  }
-
-  private doesShapeOverlap(
-    newShape: Shape,
-    ignoreIndex: number | null = null
-  ): boolean {
-    const samplePoints: { x: number; y: number }[] = [];
-    if (newShape.mode === 'circle' && newShape.radius) {
-      const r = newShape.radius;
-      const step = 5;
-
-      for (let dx = -r; dx <= r; dx += step) {
-        for (let dy = -r; dy <= r; dy += step) {
-          if (dx * dx + dy * dy <= r * r) {
-            samplePoints.push({
-              x: newShape.startX! + dx,
-              y: newShape.startY! + dy,
-            });
-          }
-        }
-      }
-
-      const angleStep = Math.PI / 36;
-      for (let angle = 0; angle < 2 * Math.PI; angle += angleStep) {
-        samplePoints.push({
-          x: newShape.startX! + r * Math.cos(angle),
-          y: newShape.startY! + r * Math.sin(angle),
-        });
-      }
-    } else if (newShape.mode === 'square' && newShape.endX && newShape.endY) {
-      const minX = Math.min(newShape.startX!, newShape.endX);
-      const maxX = Math.max(newShape.startX!, newShape.endX);
-      const minY = Math.min(newShape.startY!, newShape.endY);
-      const maxY = Math.max(newShape.startY!, newShape.endY);
-      const step = 10;
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          samplePoints.push({ x, y });
-        }
-      }
-    } else if (newShape.mode === 'triangle' && newShape.endX && newShape.endY) {
-      const midX = newShape.startX! * 2 - newShape.endX!;
-      const midY = newShape.endY!;
-
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-      this.ctx.moveTo(newShape.startX!, newShape.startY!);
-      this.ctx.lineTo(newShape.endX!, newShape.endY!);
-      this.ctx.lineTo(midX, midY);
-      this.ctx.closePath();
-
-      const minX = Math.min(newShape.startX!, newShape.endX!, midX);
-      const maxX = Math.max(newShape.startX!, newShape.endX!, midX);
-      const minY = Math.min(newShape.startY!, newShape.endY!, midY);
-      const maxY = Math.max(newShape.startY!, newShape.endY!, midY);
-      const step = 10;
-
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          if (this.ctx.isPointInPath(x, y)) {
-            samplePoints.push({ x, y });
-          }
-        }
-      }
-      this.ctx.restore();
-    } else if (newShape.mode === 'free' && newShape.points) {
-      const minX = Math.min(...newShape.points.map((p) => p.x));
-      const maxX = Math.max(...newShape.points.map((p) => p.x));
-      const minY = Math.min(...newShape.points.map((p) => p.y));
-      const maxY = Math.max(...newShape.points.map((p) => p.y));
-
-      const step = 10;
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-      this.ctx.moveTo(newShape.points[0].x, newShape.points[0].y);
-      for (let j = 1; j < newShape.points.length; j++) {
-        this.ctx.lineTo(newShape.points[j].x, newShape.points[j].y);
-      }
-      this.ctx.closePath();
-
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          if (this.ctx.isPointInPath(x, y)) {
-            samplePoints.push({ x, y });
-          }
-        }
-      }
-      this.ctx.restore();
-    }
-    for (let i = 0; i < this.polygons.length; i++) {
-      if (ignoreIndex !== null && i === ignoreIndex) continue;
-      const existing = this.polygons[i];
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-
-      if (existing.mode === 'circle' && existing.radius) {
-        this.ctx.arc(
-          existing.startX!,
-          existing.startY!,
-          existing.radius,
-          0,
-          Math.PI * 2
-        );
-      } else if (existing.mode === 'square' && existing.endX && existing.endY) {
-        this.ctx.rect(
-          existing.startX!,
-          existing.startY!,
-          existing.endX - existing.startX!,
-          existing.endY - existing.startY!
-        );
-      } else if (
-        existing.mode === 'triangle' &&
-        existing.endX &&
-        existing.endY
-      ) {
-        const midX = existing.startX! * 2 - existing.endX!;
-        const midY = existing.endY!;
-        this.ctx.moveTo(existing.startX!, existing.startY!);
-        this.ctx.lineTo(existing.endX!, existing.endY!);
-        this.ctx.lineTo(midX, midY);
-        this.ctx.closePath();
-      } else if (existing.mode === 'free' && existing.points) {
-        this.ctx.moveTo(existing.points[0].x, existing.points[0].y);
-        for (let j = 1; j < existing.points.length; j++) {
-          this.ctx.lineTo(existing.points[j].x, existing.points[j].y);
-        }
-        this.ctx.closePath();
-      }
-
-      if (samplePoints.some((p) => this.ctx.isPointInPath(p.x, p.y))) {
-        this.ctx.restore();
-        return true;
-      }
-      this.ctx.restore();
-    }
-    return false;
-  }
-
-  private isInsideBoundary(x: number, y: number): boolean {
-    return (
-      x >= 73.88825541619121 &&
-      x <= 5069.783352337514 &&
-      y >= 144.65222348916728 &&
-      y <= 3551.7673888255417
-    );
-  }
   ngAfterViewInit(): void {
     const img = this.mapImage.nativeElement;
     const canvas = this.mapCanvas.nativeElement;
@@ -384,39 +152,266 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }))
         : [];
 
-      this.carSocket.updateFences(this.polygons);
+      // this.carSocket.updateFences(this.polygons);
       this.redraw();
     };
+    canvas.addEventListener('mousemove', (event) => {
+      this.coord = this.getImageCoords(event);
+      console.log('Image coords:', this.coord);
+    });
     window.addEventListener('resize', () => {
       this.fitImageToCanvas();
       this.redraw();
     });
   }
-  private toCanvasCoords(x: number, y: number) {
-    return {
-      x: x * this.scale + this.offsetX,
-      y: y * this.scale + this.offsetY,
-    };
-  }
-  private fitImageToCanvas() {
-    const img = this.mapImage.nativeElement;
-    const canvas = this.mapCanvas.nativeElement;
-    const container = canvas.parentElement as HTMLElement;
-    const dpr = window.devicePixelRatio || 1;
-    const displayWidth = container.clientWidth;
-    const displayHeight = container.clientHeight;
-    canvas.width = displayWidth * dpr;
-    canvas.height = displayHeight * dpr;
-    canvas.style.width = displayWidth + 'px';
-    canvas.style.height = displayHeight + 'px';
+  private getImageCoords(event: MouseEvent) {
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+    const cssX = event.clientX - rect.left;
+    const cssY = event.clientY - rect.top;
+    const img: HTMLImageElement = this.mapImage.nativeElement;
 
-    const scaleX = canvas.width / dpr / img.naturalWidth;
-    const scaleY = canvas.height / dpr / img.naturalHeight;
-    this.fittedScale = Math.min(scaleX, scaleY);
-    this.scale = this.fittedScale;
-    this.offsetX = (canvas.width - img.naturalWidth * this.scale) / 2;
-    this.offsetY = (canvas.height - img.naturalHeight * this.scale) / 2;
+    // CSS px → image px
+    const imagePxX = (cssX - this.offsetX) / this.scale;
+    const imagePxY_topLeft = (cssY - this.offsetY) / this.scale;
+
+    // pixels per map unit
+    const imagePxPerMapX = img.naturalWidth / this.MAP_W;
+    const imagePxPerMapY = img.naturalHeight / this.MAP_H;
+
+    // image px → map coords
+    const mapX = imagePxX / imagePxPerMapX;
+    const mapY_fromBottom =
+      (img.naturalHeight - imagePxY_topLeft) / imagePxPerMapY;
+
+    // final result = map units (already scaled correctly)
+    return { x: mapX, y: mapY_fromBottom };
   }
+  private getTransformedCoords(event: MouseEvent) {
+    const rect = this.mapCanvas.nativeElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const canvasX = (event.clientX - rect.left) * dpr;
+    const canvasY = (event.clientY - rect.top) * dpr;
+    const x = (canvasX - this.offsetX) / this.scale;
+    const y = (canvasY - this.offsetY) / this.scale;
+    return { x, y };
+  }
+  private toCanvasCoords(mapX: number, mapY: number) {
+    const img: HTMLImageElement = this.mapImage.nativeElement;
+
+    // 1) map units → image pixels
+    const imagePxPerMapX = img.naturalWidth / this.MAP_W;
+    const imagePxPerMapY = img.naturalHeight / this.MAP_H;
+
+    const imagePxX = mapX * imagePxPerMapX;
+    const imagePxY_fromBottom = mapY * imagePxPerMapY;
+    const imagePxY_topLeft = img.naturalHeight - imagePxY_fromBottom;
+
+    // 2) image pixels → canvas pixels (apply only scale, NOT pan offsets)
+    const canvasX = imagePxX * this.scale;
+    const canvasY = imagePxY_topLeft * this.scale;
+
+    return { x: canvasX, y: canvasY };
+  }
+
+  private fitImageToCanvas() {
+    const img: HTMLImageElement = this.mapImage.nativeElement;
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
+    const ctx = this.ctx!;
+    const dpr = window.devicePixelRatio || 1;
+
+    // CSS size to fit window (keep aspect)
+    const maxWidth = window.innerWidth * 0.9;
+    const maxHeight = window.innerHeight * 0.9;
+    this.fittedScale = Math.min(
+      maxWidth / img.naturalWidth,
+      maxHeight / img.naturalHeight,
+      1
+    );
+    this.scale = this.fittedScale; // keep old name
+
+    // CSS (logical) size of canvas
+    const cssWidth = img.naturalWidth * this.scale;
+    const cssHeight = img.naturalHeight * this.scale;
+
+    // set the backing store size in device pixels, and CSS size separately
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+
+    // reset pan/zoom offsets (in CSS pixels)
+    this.offsetX = 0;
+    this.offsetY = 0;
+
+    // clear device buffer (identity transform works with device-pixel buffer)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // set transform so all drawing coordinates are in CSS pixels (user-space = CSS px)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // draw the image using CSS sizes (ctx is scaled by dpr so image will be crisp)
+    ctx.drawImage(img, 0, 0, cssWidth, cssHeight);
+  }
+  private drawRobots() {
+    if (!this.robots || this.robots.length === 0) return;
+    const ctx = this.ctx!;
+    // radius in CSS px (scale with zoom if you want)
+    const baseRadius = 6; // CSS px at scale=1
+    const radius = baseRadius * Math.max(1, this.scale); // optional scaling
+
+    for (const r of this.robots) {
+      // assume r.x,r.y are world units (SLAM). If r.x/r.y are map units or image px,
+      // convert accordingly (but this implementation expects world units).
+      const { x, y } = this.toCanvasCoords(r.x, r.y);
+      // console.log('x', x, 'Y', y);
+      ctx.beginPath();
+      // console.log(x,"x");
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = r.fenceName ? 'orange' : 'blue';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'black';
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = 'black';
+      ctx.font = `${12 * Math.max(1, this.scale)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.fillText(r.name, x, y - radius - 6);
+    }
+  }
+  private redraw() {
+    const img: HTMLImageElement = this.mapImage.nativeElement;
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
+    const ctx = this.ctx!;
+    const dpr = window.devicePixelRatio || 1;
+
+    // CSS sizes
+    const cssW = img.naturalWidth * this.scale;
+    const cssH = img.naturalHeight * this.scale;
+
+    // clear device buffer
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // set transform so next drawing uses CSS px coords (1 user unit == 1 CSS px)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // draw image at CSS size
+    ctx.drawImage(img, 0, 0, cssW, cssH);
+
+    // draw overlays in CSS px coordinates
+    // this.drawRobots();
+    // this.drawRobots();
+    // this.ctx.drawImage(this.mapImage.nativeElement, 0, 0);
+
+    this.polygons.forEach((shape, i) => {
+      if (this.isShapeInsideBoundary(shape)) {
+        this.drawShape(shape, 'rgba(255,0,0,0.3)', 'red');
+        if (shape.name) this.drawShapeLabel(shape);
+      }
+    });
+    if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
+      if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
+        const tempShape: Shape = { mode: 'free', points: this.currentPolygon };
+        this.drawShape(tempShape, 'transparent', 'green');
+      } else if (this.currentShape && !this.currentShape.name) {
+        this.drawShape(this.currentShape, 'transparent', 'green');
+      }
+    }
+    this.ctx.beginPath();
+    this.ctx.lineWidth = 3 / this.scale;
+    this.ctx.stroke();
+
+    if (this.hoveredShape && this.hoveredShape.isResizable) {
+      this.ctx.fillStyle = 'red';
+      this.ctx.strokeStyle = 'black';
+
+      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
+        const handle = {
+          x: this.hoveredShape.startX! + this.hoveredShape.radius,
+          y: this.hoveredShape.startY!,
+        };
+        const scaledHandleSize = this.handleSize / this.scale;
+        this.ctx.beginPath();
+        this.ctx.arc(handle.x, handle.y, scaledHandleSize / 2, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+      } else if (
+        this.hoveredShape.mode === 'square' ||
+        this.hoveredShape.mode === 'triangle'
+      ) {
+        const corners = this.getShapeCorners(this.hoveredShape);
+        const scaledHandleSize = this.handleSize / this.scale;
+        for (let c of corners) {
+          this.ctx.beginPath();
+          this.ctx.rect(
+            c.x - scaledHandleSize / 2,
+            c.y - scaledHandleSize / 2,
+            scaledHandleSize,
+            scaledHandleSize
+          );
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+      } else if (
+        this.hoveredShape.mode === 'free' &&
+        this.hoveredShape.points
+      ) {
+        for (let p of this.hoveredShape.points) {
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, this.handleSize, 0, Math.PI * 2);
+          this.ctx.fill();
+          this.ctx.stroke();
+        }
+      }
+
+      this.ctx.restore();
+    }
+
+    if (this.showPath && this.robotPath.length > 1) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      const first = this.toCanvasCoords(
+        this.robotPath[0].x,
+        this.robotPath[0].y
+      );
+      this.ctx.moveTo(first.x, first.y);
+
+      for (let i = 1; i < this.robotPath.length; i++) {
+        const p = this.toCanvasCoords(this.robotPath[i].x, this.robotPath[i].y);
+        this.ctx.lineTo(p.x, p.y);
+      }
+
+      this.ctx.strokeStyle = 'blue';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+    this.restrictionPoints.forEach((p) => {
+      const canvasPoint = this.toCanvasCoords(p.x, p.y);
+      const size = 20;
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.arc(canvasPoint.x, canvasPoint.y, size, 0, 2 * Math.PI);
+      this.ctx.fillStyle = 'rgba(255,0,0,0.3)';
+      this.ctx.fill();
+      this.ctx.strokeStyle = 'red';
+      this.ctx.lineWidth = 3;
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.moveTo(canvasPoint.x - size / 1.5, canvasPoint.y - size / 1.5);
+      this.ctx.lineTo(canvasPoint.x + size / 1.5, canvasPoint.y + size / 1.5);
+      this.ctx.stroke();
+
+      this.ctx.restore();
+    });
+    this.drawRobots();
+  }
+
   onCanvasClick(event: MouseEvent) {
     if (event.button !== 0) return;
     if (event.target !== this.mapCanvas.nativeElement) return;
@@ -429,7 +424,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           if (confirm(`Delete fence "${this.polygons[i].name}"?`)) {
             this.polygons.splice(i, 1);
             localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-            this.carSocket.updateFences(this.polygons);
+            // this.carSocket.updateFences(this.polygons);
             this.redraw();
           }
           break;
@@ -517,7 +512,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (event.target !== this.mapCanvas.nativeElement) return;
 
     const { x, y } = this.getTransformedCoords(event);
-
+    this.currentPolygon.push({ x, y });
     if (!this.isInsideBoundary(x, y)) {
       alert('Click outside boundary');
       return;
@@ -872,7 +867,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         }
       } else {
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        this.carSocket.updateFences(this.polygons);
+        // this.carSocket.updateFences(this.polygons);
       }
       this.currentPolygon = [];
       this.currentShape = null;
@@ -897,7 +892,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         alert('Invalid move: shape overlaps another!');
       } else {
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        this.carSocket.updateFences(this.polygons);
+        // this.carSocket.updateFences(this.polygons);
       }
       this.isDrawingShape = false;
       this.currentPolygon = [];
@@ -1065,10 +1060,230 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         newShape.isResizable = isResize;
         this.polygons.push(newShape);
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        this.carSocket.updateFences(this.polygons);
+        // this.carSocket.updateFences(this.polygons);
         this.redraw();
       })
       .catch(() => {});
+  }
+  private isShapeInsideBoundary(shape: Shape): boolean {
+    if (shape.mode === 'free' && shape.points) {
+      return shape.points.every((p) => this.isInsideBoundary(p.x, p.y));
+    } else if (shape.mode === 'circle') {
+      const r =
+        shape.radius ??
+        Math.sqrt(
+          Math.pow((shape.endX ?? shape.startX)! - shape.startX!, 2) +
+            Math.pow((shape.endY ?? shape.startY)! - shape.startY!, 2)
+        );
+      return (
+        this.isInsideBoundary(shape.startX! - r, shape.startY! - r) &&
+        this.isInsideBoundary(shape.startX! + r, shape.startY! + r)
+      );
+    } else if (shape.mode === 'square') {
+      const corners = [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: shape.startX!, y: shape.endY! },
+      ];
+      return corners.every((c) => this.isInsideBoundary(c.x, c.y));
+    } else if (shape.mode === 'triangle') {
+      const midX = shape.startX! * 2 - shape.endX!;
+      const midY = shape.endY!;
+      const vertices = [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: midX, y: midY },
+      ];
+      return vertices.every((v) => this.isInsideBoundary(v.x, v.y));
+    }
+    return false;
+  }
+  public isDuplicateName(
+    name: string | null,
+    ignoreShape?: Shape | null
+  ): boolean {
+    if (!name) return false;
+    const lower = name.toLowerCase();
+    const found = this.polygons.some(
+      (shape) => shape !== ignoreShape && shape.name?.toLowerCase() === lower
+    );
+    this.isDuplicate = found;
+    if (found) {
+      this.isSubmit = true;
+    }
+    return found;
+  }
+
+  isDupliateNameValidator = (control: any) => {
+    if (!control.value) return null;
+    const valLower = control.value.toLowerCase();
+    const isDuplicate = this.polygons.some(
+      (shape) =>
+        shape !== this.selectedFence && shape.name?.toLowerCase() === valLower
+    );
+    return isDuplicate ? { duplicateName: true } : null;
+  };
+
+  toggleDeleteMode() {
+    if (this.polygons.length !== 0) {
+      this.deleteMode = !this.deleteMode;
+    }
+  }
+  togglePath() {
+    this.showPath = !this.showPath;
+    if (!this.showPath) {
+      this.robotPath = [];
+      this.redraw();
+    }
+  }
+
+  private doesShapeOverlap(
+    newShape: Shape,
+    ignoreIndex: number | null = null
+  ): boolean {
+    const samplePoints: { x: number; y: number }[] = [];
+    if (newShape.mode === 'circle' && newShape.radius) {
+      const r = newShape.radius;
+      const step = 5;
+
+      for (let dx = -r; dx <= r; dx += step) {
+        for (let dy = -r; dy <= r; dy += step) {
+          if (dx * dx + dy * dy <= r * r) {
+            samplePoints.push({
+              x: newShape.startX! + dx,
+              y: newShape.startY! + dy,
+            });
+          }
+        }
+      }
+
+      const angleStep = Math.PI / 36;
+      for (let angle = 0; angle < 2 * Math.PI; angle += angleStep) {
+        samplePoints.push({
+          x: newShape.startX! + r * Math.cos(angle),
+          y: newShape.startY! + r * Math.sin(angle),
+        });
+      }
+    } else if (newShape.mode === 'square' && newShape.endX && newShape.endY) {
+      const minX = Math.min(newShape.startX!, newShape.endX);
+      const maxX = Math.max(newShape.startX!, newShape.endX);
+      const minY = Math.min(newShape.startY!, newShape.endY);
+      const maxY = Math.max(newShape.startY!, newShape.endY);
+      const step = 10;
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          samplePoints.push({ x, y });
+        }
+      }
+    } else if (newShape.mode === 'triangle' && newShape.endX && newShape.endY) {
+      const midX = newShape.startX! * 2 - newShape.endX!;
+      const midY = newShape.endY!;
+
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.beginPath();
+      this.ctx.moveTo(newShape.startX!, newShape.startY!);
+      this.ctx.lineTo(newShape.endX!, newShape.endY!);
+      this.ctx.lineTo(midX, midY);
+      this.ctx.closePath();
+
+      const minX = Math.min(newShape.startX!, newShape.endX!, midX);
+      const maxX = Math.max(newShape.startX!, newShape.endX!, midX);
+      const minY = Math.min(newShape.startY!, newShape.endY!, midY);
+      const maxY = Math.max(newShape.startY!, newShape.endY!, midY);
+      const step = 10;
+
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          if (this.ctx.isPointInPath(x, y)) {
+            samplePoints.push({ x, y });
+          }
+        }
+      }
+      this.ctx.restore();
+    } else if (newShape.mode === 'free' && newShape.points) {
+      const minX = Math.min(...newShape.points.map((p) => p.x));
+      const maxX = Math.max(...newShape.points.map((p) => p.x));
+      const minY = Math.min(...newShape.points.map((p) => p.y));
+      const maxY = Math.max(...newShape.points.map((p) => p.y));
+
+      const step = 10;
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.beginPath();
+      this.ctx.moveTo(newShape.points[0].x, newShape.points[0].y);
+      for (let j = 1; j < newShape.points.length; j++) {
+        this.ctx.lineTo(newShape.points[j].x, newShape.points[j].y);
+      }
+      this.ctx.closePath();
+
+      for (let x = minX; x <= maxX; x += step) {
+        for (let y = minY; y <= maxY; y += step) {
+          if (this.ctx.isPointInPath(x, y)) {
+            samplePoints.push({ x, y });
+          }
+        }
+      }
+      this.ctx.restore();
+    }
+    for (let i = 0; i < this.polygons.length; i++) {
+      if (ignoreIndex !== null && i === ignoreIndex) continue;
+      const existing = this.polygons[i];
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.beginPath();
+
+      if (existing.mode === 'circle' && existing.radius) {
+        this.ctx.arc(
+          existing.startX!,
+          existing.startY!,
+          existing.radius,
+          0,
+          Math.PI * 2
+        );
+      } else if (existing.mode === 'square' && existing.endX && existing.endY) {
+        this.ctx.rect(
+          existing.startX!,
+          existing.startY!,
+          existing.endX - existing.startX!,
+          existing.endY - existing.startY!
+        );
+      } else if (
+        existing.mode === 'triangle' &&
+        existing.endX &&
+        existing.endY
+      ) {
+        const midX = existing.startX! * 2 - existing.endX!;
+        const midY = existing.endY!;
+        this.ctx.moveTo(existing.startX!, existing.startY!);
+        this.ctx.lineTo(existing.endX!, existing.endY!);
+        this.ctx.lineTo(midX, midY);
+        this.ctx.closePath();
+      } else if (existing.mode === 'free' && existing.points) {
+        this.ctx.moveTo(existing.points[0].x, existing.points[0].y);
+        for (let j = 1; j < existing.points.length; j++) {
+          this.ctx.lineTo(existing.points[j].x, existing.points[j].y);
+        }
+        this.ctx.closePath();
+      }
+
+      if (samplePoints.some((p) => this.ctx.isPointInPath(p.x, p.y))) {
+        this.ctx.restore();
+        return true;
+      }
+      this.ctx.restore();
+    }
+    return false;
+  }
+
+  private isInsideBoundary(x: number, y: number): boolean {
+    return (
+      x >= 73.88825541619121 &&
+      x <= 5069.783352337514 &&
+      y >= 144.65222348916728 &&
+      y <= 3551.7673888255417
+    );
   }
   editFenceByIndex(index: number) {
     if (index < 0 || index >= this.polygons.length) return;
@@ -1113,7 +1328,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.selectedFence!.isResizable = isResize;
 
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        this.carSocket.updateFences(this.polygons);
+        // this.carSocket.updateFences(this.polygons);
 
         this.resetEditState();
         this.redraw();
@@ -1154,15 +1369,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     localStorage.removeItem('geoFences');
     this.redraw();
   }
-  private getTransformedCoords(event: MouseEvent) {
-    const rect = this.mapCanvas.nativeElement.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const canvasX = (event.clientX - rect.left) * dpr;
-    const canvasY = (event.clientY - rect.top) * dpr;
-    const x = (canvasX - this.offsetX) / this.scale;
-    const y = (canvasY - this.offsetY) / this.scale;
-    return { x, y };
-  }
+
   private getShapeCorners(shape: Shape): { x: number; y: number }[] {
     if (shape.mode === 'square') {
       return [
@@ -1181,130 +1388,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ];
     }
     return [];
-  }
-
-  private redraw() {
-    const canvas = this.mapCanvas.nativeElement;
-
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    this.ctx.setTransform(
-      this.scale,
-      0,
-      0,
-      this.scale,
-      this.offsetX,
-      this.offsetY
-    );
-    this.ctx.imageSmoothingEnabled = this.scale <= 1;
-    const dpr = window.devicePixelRatio || 1;
-    const size = this.handleSize * dpr;
-    this.ctx.drawImage(this.mapImage.nativeElement, 0, 0);
-
-    this.polygons.forEach((shape, i) => {
-      if (this.isShapeInsideBoundary(shape)) {
-        this.drawShape(shape, 'rgba(255,0,0,0.3)', 'red');
-        if (shape.name) this.drawShapeLabel(shape);
-      }
-    });
-    if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
-      if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
-        const tempShape: Shape = { mode: 'free', points: this.currentPolygon };
-        this.drawShape(tempShape, 'transparent', 'green');
-      } else if (this.currentShape && !this.currentShape.name) {
-        this.drawShape(this.currentShape, 'transparent', 'green');
-      }
-    }
-    this.ctx.beginPath();
-    this.ctx.lineWidth = 3 / this.scale;
-    this.ctx.stroke();
-    this.drawRobots();
-    if (this.hoveredShape && this.hoveredShape.isResizable) {
-      this.ctx.fillStyle = 'red';
-      this.ctx.strokeStyle = 'black';
-
-      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
-        const handle = {
-          x: this.hoveredShape.startX! + this.hoveredShape.radius,
-          y: this.hoveredShape.startY!,
-        };
-        const scaledHandleSize = this.handleSize / this.scale;
-        this.ctx.beginPath();
-        this.ctx.arc(handle.x, handle.y, scaledHandleSize / 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-      } else if (
-        this.hoveredShape.mode === 'square' ||
-        this.hoveredShape.mode === 'triangle'
-      ) {
-        const corners = this.getShapeCorners(this.hoveredShape);
-        const scaledHandleSize = this.handleSize / this.scale;
-        for (let c of corners) {
-          this.ctx.beginPath();
-          this.ctx.rect(
-            c.x - scaledHandleSize / 2,
-            c.y - scaledHandleSize / 2,
-            scaledHandleSize,
-            scaledHandleSize
-          );
-          this.ctx.fill();
-          this.ctx.stroke();
-        }
-      } else if (
-        this.hoveredShape.mode === 'free' &&
-        this.hoveredShape.points
-      ) {
-        for (let p of this.hoveredShape.points) {
-          this.ctx.beginPath();
-          this.ctx.arc(p.x, p.y, this.handleSize, 0, Math.PI * 2);
-          this.ctx.fill();
-          this.ctx.stroke();
-        }
-      }
-
-      this.ctx.restore();
-    }
-
-    if (this.showPath && this.robotPath.length > 1) {
-      this.ctx.save();
-      this.ctx.beginPath();
-      const first = this.toCanvasCoords(
-        this.robotPath[0].x,
-        this.robotPath[0].y
-      );
-      this.ctx.moveTo(first.x, first.y);
-
-      for (let i = 1; i < this.robotPath.length; i++) {
-        const p = this.toCanvasCoords(this.robotPath[i].x, this.robotPath[i].y);
-        this.ctx.lineTo(p.x, p.y);
-      }
-
-      this.ctx.strokeStyle = 'blue';
-      this.ctx.lineWidth = 2;
-      this.ctx.stroke();
-      this.ctx.restore();
-    }
-    this.restrictionPoints.forEach((p) => {
-      const canvasPoint = this.toCanvasCoords(p.x, p.y);
-      const size = 20;
-
-      this.ctx.save();
-      this.ctx.beginPath();
-      this.ctx.arc(canvasPoint.x, canvasPoint.y, size, 0, 2 * Math.PI);
-      this.ctx.fillStyle = 'rgba(255,0,0,0.3)';
-      this.ctx.fill();
-      this.ctx.strokeStyle = 'red';
-      this.ctx.lineWidth = 3;
-      this.ctx.stroke();
-
-      this.ctx.beginPath();
-      this.ctx.moveTo(canvasPoint.x - size / 1.5, canvasPoint.y - size / 1.5);
-      this.ctx.lineTo(canvasPoint.x + size / 1.5, canvasPoint.y + size / 1.5);
-      this.ctx.stroke();
-
-      this.ctx.restore();
-    });
   }
 
   private drawShapeLabel(shape: Shape) {
@@ -1380,43 +1463,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.ctx.lineWidth = 2 / this.scale;
     this.ctx.stroke();
   }
-  private drawRobots() {
-    if (!this.robots || this.robots.length === 0) return;
-
-    for (let r of this.robots) {
-      const { x, y } = this.toCanvasCoords(r.x, r.y);
-      const size = 15 / this.scale;
-
-      // robot body
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, size, 0, Math.PI * 2);
-
-      if (r.fenceName) {
-        this.ctx.fillStyle = 'orange';
-      } else {
-        this.ctx.fillStyle = 'blue';
-      }
-
-      this.ctx.strokeStyle = 'black';
-      this.ctx.lineWidth = 2 / this.scale;
-      this.ctx.fill();
-      this.ctx.stroke();
-
-      // robot name
-      this.ctx.fillStyle = 'black';
-      this.ctx.font = `${14 / this.scale}px Arial`;
-      this.ctx.textAlign = 'center';
-      this.ctx.fillText(r.name, x, y - 20 / this.scale);
-
-      // fence label if inside
-      if (r.fenceName) {
-        this.ctx.fillStyle = 'purple';
-        this.ctx.font = `${12 / this.scale}px Arial`;
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(`Fence: ${r.fenceName}`, x, y + 25 / this.scale);
-      }
-    }
-  }
 
   hasError(ControlName: string, Errorname: string) {
     return this.mapForm.get(ControlName)?.hasError(Errorname);
@@ -1436,7 +1482,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   async deleteMap() {
     localStorage.removeItem('geoFences');
     this.polygons = [];
-    this.carSocket.updateFences([]);
+    // this.carSocket.updateFences([]);
     await this.mapStorage.deleteMap('mainMap');
     this.router.navigate(['/upload-map']);
   }

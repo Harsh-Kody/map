@@ -1,8 +1,8 @@
 export interface RobotLocation {
-  lat: number;
-  lng: number;
-  speed: number;
-  boundary: {
+  lat?: number;
+  lng?: number;
+  speed?: number;
+  boundary?: {
     minX: number;
     maxX: number;
     minY: number;
@@ -16,4 +16,9 @@ export interface RobotLocation {
   type?: any
   id?:any
   name?:any
+  qx?:any
+  qy?:any
+  qz?:any
+  timestamp?:any
+  qw?:any
 }
