@@ -35,7 +35,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private offsetX = 0;
   private offsetY = 0;
   private dragStart = { x: 0, y: 0 };
-  private readonly MAX_SCALE = 1;
+  private readonly MAX_SCALE = 2;
   private nameChange: boolean = false;
   private isPanning = false;
   private originalPoints: { x: number; y: number }[] = [];
@@ -69,10 +69,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   selectedFence: Shape | null = null;
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
-  private boundaryMinX = 73.88825541619121;
-  private boundaryMaxX = 5069.783352337514;
-  private boundaryMinY = 144.65222348916728;
-  private boundaryMaxY = 3551.7673888255417;
+
   private readonly MAP_W = 91;
   private readonly MAP_H = 128.7;
   private readonly WORLD_SCALE = 25.71;
@@ -103,20 +100,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapImageSrc = objectURL;
     }
     this.carSocket.getRobotLocation().subscribe((robot) => {
-      // if (this.showPath) {
-      //   this.robotPath.push({ x: data.x, y: data.y });
+      //    const idx = this.robots.findIndex((r) => r.id === robot.id);
+      // if (idx >= 0) {
+      //   this.robots[idx] = robot;
+      // } else {
+      //   this.robots.push(robot);
       // }
-      // console.log(robot , "robot coodinates");
-      // robot.x = Math.max(
-      //   this.boundaryMinX,
-      //   Math.min(this.boundaryMaxX, robot.x)
-      // );
-      // robot.y = Math.max(
-      //   this.boundaryMinY,
-      //   Math.min(this.boundaryMaxY, robot.y)
-      // );
 
-      // replace or update in robots[]
+      // // ✅ Save path points if enabled
+      if (this.showPath) {
+        this.robotPath.push({ x: robot.x, y: robot.y });
+      }
       const idx = this.robots.findIndex((r) => r.id === robot.id);
       if (idx >= 0) {
         this.robots[idx] = robot;
@@ -140,7 +134,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const img = this.mapImage.nativeElement;
     const canvas = this.mapCanvas.nativeElement;
     this.ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     img.onload = () => {
       this.fitImageToCanvas();
       const saved = localStorage.getItem('geoFences');
@@ -157,12 +151,46 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     };
     canvas.addEventListener('mousemove', (event) => {
       this.coord = this.getImageCoords(event);
-      console.log('Image coords:', this.coord);
     });
     window.addEventListener('resize', () => {
       this.fitImageToCanvas();
       this.redraw();
     });
+    canvas.addEventListener('mousedown', (event) => {
+      if (event.button === 2) {
+        // Right button
+        this.isPanning = true;
+        this.dragStart = {
+          x: event.clientX - this.offsetX,
+          y: event.clientY - this.offsetY,
+        };
+        canvas.style.cursor = 'grabbing';
+      }
+    });
+
+    // Mouse move → pan map if right button held
+    canvas.addEventListener('mousemove', (event) => {
+      if (this.isPanning) {
+        this.offsetX = event.clientX - this.dragStart.x;
+        this.offsetY = event.clientY - this.dragStart.y;
+        this.redraw();
+      }
+    });
+
+    window.addEventListener('mouseup', (event) => {
+      if (event.button === 2 && this.isPanning) {
+        this.isPanning = false;
+        canvas.style.cursor = 'default';
+      }
+    });
+    // window.addEventListener('mouseup', (event) => {
+    //   if (isPanning) {
+    //     isPanning = false;
+    //     canvas.style.cursor = 'default';
+    //   }
+    // });
+
+    // prevent context menu on right-click
   }
   private getImageCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
@@ -207,9 +235,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const imagePxY_fromBottom = mapY * imagePxPerMapY;
     const imagePxY_topLeft = img.naturalHeight - imagePxY_fromBottom;
 
-    // 2) image pixels → canvas pixels (apply only scale, NOT pan offsets)
-    const canvasX = imagePxX * this.scale;
-    const canvasY = imagePxY_topLeft * this.scale;
+    // 2) image pixels → canvas pixels (apply scale + pan offset)
+    const canvasX = imagePxX * this.scale + this.offsetX;
+    const canvasY = imagePxY_topLeft * this.scale + this.offsetY;
 
     return { x: canvasX, y: canvasY };
   }
@@ -220,7 +248,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const ctx = this.ctx!;
     const dpr = window.devicePixelRatio || 1;
 
-    // CSS size to fit window (keep aspect)
     const maxWidth = window.innerWidth * 0.9;
     const maxHeight = window.innerHeight * 0.9;
     this.fittedScale = Math.min(
@@ -228,31 +255,48 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       maxHeight / img.naturalHeight,
       1
     );
-    this.scale = this.fittedScale; // keep old name
+    this.scale = this.fittedScale;
 
-    // CSS (logical) size of canvas
     const cssWidth = img.naturalWidth * this.scale;
     const cssHeight = img.naturalHeight * this.scale;
 
-    // set the backing store size in device pixels, and CSS size separately
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
 
-    // reset pan/zoom offsets (in CSS pixels)
     this.offsetX = 0;
     this.offsetY = 0;
 
-    // clear device buffer (identity transform works with device-pixel buffer)
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // set transform so all drawing coordinates are in CSS pixels (user-space = CSS px)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // draw the image using CSS sizes (ctx is scaled by dpr so image will be crisp)
     ctx.drawImage(img, 0, 0, cssWidth, cssHeight);
+  }
+  @HostListener('contextmenu', ['$event'])
+  onRightClick(event: MouseEvent) {
+    event.preventDefault();
+  }
+  private drawRobotPath() {
+    if (!this.showPath || this.robotPath.length < 2) return;
+    const ctx = this.ctx!;
+    ctx.beginPath();
+
+    // Move to first point
+    const first = this.toCanvasCoords(this.robotPath[0].x, this.robotPath[0].y);
+    ctx.moveTo(first.x, first.y);
+
+    // Draw line through all path points
+    for (let i = 1; i < this.robotPath.length; i++) {
+      const pt = this.toCanvasCoords(this.robotPath[i].x, this.robotPath[i].y);
+      ctx.lineTo(pt.x, pt.y);
+    }
+
+    ctx.strokeStyle = 'blue';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
   private drawRobots() {
     if (!this.robots || this.robots.length === 0) return;
@@ -269,7 +313,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.beginPath();
       // console.log(x,"x");
       ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = r.fenceName ? 'orange' : 'blue';
+      ctx.fillStyle = r.fenceName ? 'orange' : 'red';
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'black';
       ctx.fill();
@@ -278,8 +322,38 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.fillStyle = 'black';
       ctx.font = `${12 * Math.max(1, this.scale)}px Arial`;
       ctx.textAlign = 'center';
-      ctx.fillText(r.name, x, y - radius - 6);
+      // ctx.fillText(r.name, x, y - radius - 6);
     }
+  }
+  zoomIn() {
+    const canvas = this.mapCanvas.nativeElement;
+    this.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.2);
+  }
+
+  zoomOut() {
+    const canvas = this.mapCanvas.nativeElement;
+    this.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.2);
+  }
+  private zoomAt(cx: number, cy: number, factor: number) {
+    const oldScale = this.scale;
+    const newScale = Math.min(
+      Math.max(oldScale * factor, this.fittedScale),
+      this.MAX_SCALE
+    );
+
+    if (newScale === oldScale) return; // nothing to do
+
+    // 1) Convert the CSS pixel point (cx, cy) into image space at old scale
+    const imgX = (cx - this.offsetX) / oldScale;
+    const imgY = (cy - this.offsetY) / oldScale;
+
+    // 2) Recalculate offsets so that (imgX, imgY) stays under (cx, cy)
+    this.offsetX = cx - imgX * newScale;
+    this.offsetY = cy - imgY * newScale;
+
+    // 3) Update scale and redraw
+    this.scale = newScale;
+    this.redraw();
   }
   private redraw() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
@@ -299,8 +373,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // draw image at CSS size
-    ctx.drawImage(img, 0, 0, cssW, cssH);
-
+    ctx.drawImage(img, this.offsetX, this.offsetY, cssW, cssH);
+    this.drawRobotPath();
     // draw overlays in CSS px coordinates
     // this.drawRobots();
     // this.drawRobots();
@@ -825,10 +899,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
   }
-  @HostListener('contextmenu', ['$event'])
-  onRightClick(event: MouseEvent) {
-    event.preventDefault();
-  }
 
   @HostListener('mouseup', ['$event'])
   onMouseUp(event: MouseEvent) {
@@ -1346,16 +1416,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.activeHandleIndex = null;
     this.hoveredShape = null;
     this.originalPoints = [];
-  }
-
-  zoomIn() {
-    this.scale = Math.min(this.scale * 1.2, this.MAX_SCALE);
-    this.redraw();
-  }
-
-  zoomOut() {
-    this.scale = Math.max(this.scale / 1.2, this.fittedScale);
-    this.redraw();
   }
 
   resetView() {
