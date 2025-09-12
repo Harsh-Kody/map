@@ -69,17 +69,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   selectedFence: Shape | null = null;
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
-
-  private readonly MAP_W = 91;
-  private readonly MAP_H = 128.7;
+  metaData: any = {};
+  private readonly MAP_W = 24.1;
+  private readonly MAP_H = 34.2;
   private readonly WORLD_SCALE = 25.71;
   coord: any;
   robots: any[] = [];
   lastFences: { [robotId: number]: string | null } = {};
   fenceLog: { robot: string; fenceName: string; time: Date }[] = [];
   robotList: any = [];
+  localisationStatus: string = '';
   constructor(
-    private carSocket: LocalmapService,
+    private localMapService: LocalmapService,
     private mapStorage: MapStorageService,
     private modalService: NgbModal,
     private formBuilder: FormBuilder,
@@ -99,7 +100,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const objectURL = URL.createObjectURL(blob);
       this.mapImageSrc = objectURL;
     }
-    this.carSocket.getRobotLocation().subscribe((robot) => {
+    this.localMapService.getRobotLocation().subscribe((robot) => {
       //    const idx = this.robots.findIndex((r) => r.id === robot.id);
       // if (idx >= 0) {
       //   this.robots[idx] = robot;
@@ -108,6 +109,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       // }
 
       // // ✅ Save path points if enabled
+      this.quaternionToEuler(robot.qx, robot.qy, robot.qz, robot.qw);
+      console.log('robot', robot.qx);
       if (this.showPath) {
         this.robotPath.push({ x: robot.x, y: robot.y });
       }
@@ -117,8 +120,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       } else {
         this.robots.push(robot);
       }
-
+      console.log('rooo', this.robots);
       this.redraw();
+    });
+    this.localMapService.getMetaData().subscribe((meta) => {
+      this.metaData = meta;
+    });
+    this.localMapService.getLocalisationStatus().subscribe((status) => {
+      this.localisationStatus = status;
     });
   }
 
@@ -151,6 +160,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     };
     canvas.addEventListener('mousemove', (event) => {
       this.coord = this.getImageCoords(event);
+      console.log(this.coord);
     });
     window.addEventListener('resize', () => {
       this.fitImageToCanvas();
@@ -250,6 +260,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     const maxWidth = window.innerWidth * 0.9;
     const maxHeight = window.innerHeight * 0.9;
+
     this.fittedScale = Math.min(
       maxWidth / img.naturalWidth,
       maxHeight / img.naturalHeight,
@@ -265,19 +276,77 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
 
-    this.offsetX = 0;
-    this.offsetY = 0;
+    // ✅ Center image instead of top-left
+    this.offsetX = (canvas.clientWidth - cssWidth) / 2;
+    this.offsetY = (canvas.clientHeight - cssHeight) / 2;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.drawImage(img, 0, 0, cssWidth, cssHeight);
+    ctx.drawImage(img, this.offsetX, this.offsetY, cssWidth, cssHeight);
   }
   @HostListener('contextmenu', ['$event'])
   onRightClick(event: MouseEvent) {
     event.preventDefault();
+  }
+  private quaternionToEuler(qx: number, qy: number, qz: number, qw: number) {
+    // Yaw (Z-axis rotation)
+    const yaw = Math.atan2(
+      2.0 * (qw * qz + qx * qy),
+      1.0 - 2.0 * (qy * qy + qz * qz)
+    );
+
+    // Pitch (Y-axis rotation)
+    const pitch = Math.asin(2.0 * (qw * qy - qz * qx));
+
+    // Roll (X-axis rotation)
+    const roll = Math.atan2(
+      2.0 * (qw * qx + qy * qz),
+      1.0 - 2.0 * (qx * qx + qy * qy)
+    );
+
+    return {
+      yaw: yaw * (180 / Math.PI), // degrees
+      pitch: pitch * (180 / Math.PI),
+      roll: roll * (180 / Math.PI),
+    };
+  }
+
+  private drawCameraFOV(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    yaw: number,
+    fovDeg: number,
+    range: number
+  ) {
+    const fovRad = (fovDeg * Math.PI) / 180;
+    const yawRad = (yaw * Math.PI) / 180;
+    const visibleRange = range * this.scale;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+
+    ctx.lineTo(
+      x + visibleRange * Math.cos(yawRad - fovRad / 2),
+      y + visibleRange * Math.sin(yawRad - fovRad / 2)
+    );
+
+    ctx.lineTo(
+      x + visibleRange * Math.cos(yawRad + fovRad / 2),
+      y + visibleRange * Math.sin(yawRad + fovRad / 2)
+    );
+
+    ctx.closePath();
+
+    // Fill with transparent green
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+    ctx.fill();
+
+    // Stroke with dark green border
+    ctx.strokeStyle = 'darkgreen';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
   private drawRobotPath() {
     if (!this.showPath || this.robotPath.length < 2) return;
@@ -303,7 +372,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const ctx = this.ctx!;
     // radius in CSS px (scale with zoom if you want)
     const baseRadius = 6; // CSS px at scale=1
-    const radius = baseRadius * Math.max(1, this.scale); // optional scaling
+    const radius = baseRadius; // optional scaling
 
     for (const r of this.robots) {
       // assume r.x,r.y are world units (SLAM). If r.x/r.y are map units or image px,
@@ -318,7 +387,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.strokeStyle = 'black';
       ctx.fill();
       ctx.stroke();
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      // Adjust these depending on your camera
+      const fovDeg = 120; // camera field of view
+      const range = 100; // aura length in px (adjust for scaling)
 
+      this.drawCameraFOV(ctx, x, y, canvasYaw, fovDeg, range);
       ctx.fillStyle = 'black';
       ctx.font = `${12 * Math.max(1, this.scale)}px Arial`;
       ctx.textAlign = 'center';
@@ -326,32 +401,32 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
   }
   zoomIn() {
-    const canvas = this.mapCanvas.nativeElement;
-    this.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.2);
+    this.zoomAtImageCenter(1.2);
   }
 
   zoomOut() {
-    const canvas = this.mapCanvas.nativeElement;
-    this.zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.2);
+    this.zoomAtImageCenter(1 / 1.2);
   }
-  private zoomAt(cx: number, cy: number, factor: number) {
+  private zoomAtImageCenter(factor: number) {
     const oldScale = this.scale;
     const newScale = Math.min(
       Math.max(oldScale * factor, this.fittedScale),
       this.MAX_SCALE
     );
+    if (newScale === oldScale) return;
 
-    if (newScale === oldScale) return; // nothing to do
+    const canvas = this.mapCanvas.nativeElement;
+    const cx = canvas.clientWidth / 2;
+    const cy = canvas.clientHeight / 2;
 
-    // 1) Convert the CSS pixel point (cx, cy) into image space at old scale
+    // convert canvas center point to image coordinates at old scale
     const imgX = (cx - this.offsetX) / oldScale;
     const imgY = (cy - this.offsetY) / oldScale;
 
-    // 2) Recalculate offsets so that (imgX, imgY) stays under (cx, cy)
+    // adjust offsets so that image center stays fixed
     this.offsetX = cx - imgX * newScale;
     this.offsetY = cy - imgY * newScale;
 
-    // 3) Update scale and redraw
     this.scale = newScale;
     this.redraw();
   }

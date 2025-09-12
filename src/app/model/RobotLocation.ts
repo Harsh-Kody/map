@@ -10,6 +10,7 @@ export interface RobotLocation {
   };
   x?:any
   y?:any
+  z?:any
   fence?:any
   fenceIndex?:any
   fenceName?:any

@@ -46,6 +46,34 @@
       </ng-container>
     </div>
   </div>
+  <div class="robot-info">
+    <h3>Robot Coords</h3>
+    <div *ngIf="robots.length > 0; else noRobot">
+      <div *ngFor="let r of robots">
+        <strong>{{ r.name || "Robot " }}</strong
+        ><br />
+        X: {{ r.x | number : "1.2-2" }} <br />
+        Y: {{ r.y | number : "1.2-2" }} <br />
+        Z: {{ r.z }} <br />
+        <hr />
+      </div>
+    </div>
+    <ng-template #noRobot>
+      <p>No robots online.</p>
+    </ng-template>
+    <div class="meta-data" *ngIf="metaData.DistanceTravelled !== undefined">
+      <!-- <h3>Meta </h3> -->
+      <p>
+        Distance Travelled:
+        {{ metaData.DistanceTravelled | number : "1.2-2" }} m
+      </p>
+    </div>
+    <div class="localisation-status" *ngIf="localisationStatus">
+      <p>
+        Localisation Status: <strong>{{ localisationStatus }}</strong>
+      </p>
+    </div>
+  </div>
 </div>
 <ng-template #fenceModal let-modal>
   <form

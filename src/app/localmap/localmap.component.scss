@@ -69,3 +69,13 @@
   transform: translate(-50%, -50%);
   cursor: pointer;
 }
+.robot-info {
+  width: 220px;
+  padding: 10px;
+  margin-left: 10px;
+  background: #f9f9f9;
+  border-left: 2px solid #ccc;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  overflow-y: auto;
+}
