@@ -1372,136 +1372,86 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     newShape: Shape,
     ignoreIndex: number | null = null
   ): boolean {
-    const samplePoints: { x: number; y: number }[] = [];
-    console.log('new shape ', newShape);
-    // --- 1. Generate sample points for new shape ---
-    if (newShape.mode === 'circle' && newShape.radius) {
-      const r = newShape.radius;
-      const step = 3;
-      for (let dx = -r; dx <= r; dx += step) {
-        for (let dy = -r; dy <= r; dy += step) {
-          if (dx * dx + dy * dy <= r * r) {
-            samplePoints.push({
-              x: newShape.startX! + dx,
-              y: newShape.startY! + dy,
-            });
-          }
-        }
-      }
-    } else if (newShape.mode === 'square' && newShape.endX && newShape.endY) {
-      const minX = Math.min(newShape.startX!, newShape.endX);
-      const maxX = Math.max(newShape.startX!, newShape.endX);
-      const minY = Math.min(newShape.startY!, newShape.endY);
-      const maxY = Math.max(newShape.startY!, newShape.endY);
-      const step = 5; // finer resolution
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          samplePoints.push({ x, y });
-        }
-      }
-    } else if (newShape.mode === 'triangle' && newShape.endX && newShape.endY) {
-      const p1 = { x: newShape.startX!, y: newShape.startY! };
-      const p2 = { x: newShape.endX!, y: newShape.endY! };
-      const p3 = { x: 2 * p1.x - p2.x, y: p2.y };
-
-      // Bounding box
-      const minX = Math.min(p1.x, p2.x, p3.x);
-      const maxX = Math.max(p1.x, p2.x, p3.x);
-      const minY = Math.min(p1.y, p2.y, p3.y);
-      const maxY = Math.max(p1.y, p2.y, p3.y);
-
-      const step = 5;
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-      this.ctx.moveTo(p1.x, p1.y);
-      this.ctx.lineTo(p2.x, p2.y);
-      this.ctx.lineTo(p3.x, p3.y);
-      this.ctx.closePath();
-
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          if (this.ctx.isPointInPath(x, y)) {
-            samplePoints.push({ x, y });
-          }
-        }
-      }
-      this.ctx.restore();
-    } else if (newShape.mode === 'free' && newShape.points) {
-      const minX = Math.min(...newShape.points.map((p) => p.x));
-      const maxX = Math.max(...newShape.points.map((p) => p.x));
-      const minY = Math.min(...newShape.points.map((p) => p.y));
-      const maxY = Math.max(...newShape.points.map((p) => p.y));
-
-      const step = 5;
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-      this.ctx.moveTo(newShape.points[0].x, newShape.points[0].y);
-      for (let j = 1; j < newShape.points.length; j++) {
-        this.ctx.lineTo(newShape.points[j].x, newShape.points[j].y);
-      }
-      this.ctx.closePath();
-
-      for (let x = minX; x <= maxX; x += step) {
-        for (let y = minY; y <= maxY; y += step) {
-          if (this.ctx.isPointInPath(x, y)) {
-            samplePoints.push({ x, y });
-          }
-        }
-      }
-      this.ctx.restore();
-    }
-
-    // --- 2. Check against all existing shapes ---
+    const newPoly = this.shapeToPolygon(newShape);
     for (let i = 0; i < this.polygons.length; i++) {
       if (ignoreIndex !== null && i === ignoreIndex) continue;
-      const existing = this.polygons[i];
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.beginPath();
-
-      if (existing.mode === 'circle' && existing.radius) {
-        this.ctx.arc(
-          existing.startX!,
-          existing.startY!,
-          existing.radius,
-          0,
-          Math.PI * 2
-        );
-      } else if (existing.mode === 'square' && existing.endX && existing.endY) {
-        const x = Math.min(existing.startX!, existing.endX!);
-        const y = Math.min(existing.startY!, existing.endY!);
-        const w = Math.abs(existing.endX! - existing.startX!);
-        const h = Math.abs(existing.endY! - existing.startY!);
-        this.ctx.rect(x, y, w, h);
-      } else if (
-        existing.mode === 'triangle' &&
-        existing.endX &&
-        existing.endY
-      ) {
-        const p1 = { x: existing.startX!, y: existing.startY! };
-        const p2 = { x: existing.endX!, y: existing.endY! };
-        const p3 = { x: 2 * p1.x - p2.x, y: p2.y };
-        this.ctx.moveTo(p1.x, p1.y);
-        this.ctx.lineTo(p2.x, p2.y);
-        this.ctx.lineTo(p3.x, p3.y);
-        this.ctx.closePath();
-      } else if (existing.mode === 'free' && existing.points) {
-        this.ctx.moveTo(existing.points[0].x, existing.points[0].y);
-        for (let j = 1; j < existing.points.length; j++) {
-          this.ctx.lineTo(existing.points[j].x, existing.points[j].y);
-        }
-        this.ctx.closePath();
-      }
-
-      if (samplePoints.some((p) => this.ctx.isPointInPath(p.x, p.y))) {
-        this.ctx.restore();
+      const otherPoly = this.shapeToPolygon(this.polygons[i]);
+      if (this.polygonsOverlap(newPoly, otherPoly)) {
         return true;
       }
-      this.ctx.restore();
     }
     return false;
+  }
+
+  private shapeToPolygon(shape: Shape): { x: number; y: number }[] {
+    if (shape.mode === 'circle' && shape.radius) {
+      const points: { x: number; y: number }[] = [];
+      const steps = 24; // higher = smoother circle
+      for (let i = 0; i < steps; i++) {
+        const angle = (2 * Math.PI * i) / steps;
+        points.push({
+          x: shape.startX! + shape.radius * Math.cos(angle),
+          y: shape.startY! + shape.radius * Math.sin(angle),
+        });
+      }
+      return points;
+    } else if (shape.mode === 'square') {
+      return [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: shape.startX!, y: shape.endY! },
+      ];
+    } else if (shape.mode === 'triangle') {
+      return [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.startY! },
+        { x: (shape.startX! + shape.endX!) / 2, y: shape.endY! },
+      ];
+    } else if (shape.mode === 'free' && shape.points) {
+      return shape.points;
+    }
+    return [];
+  }
+  private polygonsOverlap(
+    polyA: { x: number; y: number }[],
+    polyB: { x: number; y: number }[]
+  ): boolean {
+    const polygons = [polyA, polyB];
+    for (let i = 0; i < polygons.length; i++) {
+      const polygon = polygons[i];
+      for (let j = 0; j < polygon.length; j++) {
+        const k = (j + 1) % polygon.length;
+        const edge = {
+          x: polygon[k].x - polygon[j].x,
+          y: polygon[k].y - polygon[j].y,
+        };
+
+        // perpendicular axis
+        const axis = { x: -edge.y, y: edge.x };
+
+        let minA = Infinity,
+          maxA = -Infinity;
+        for (const p of polyA) {
+          const proj = p.x * axis.x + p.y * axis.y;
+          minA = Math.min(minA, proj);
+          maxA = Math.max(maxA, proj);
+        }
+
+        let minB = Infinity,
+          maxB = -Infinity;
+        for (const p of polyB) {
+          const proj = p.x * axis.x + p.y * axis.y;
+          minB = Math.min(minB, proj);
+          maxB = Math.max(maxB, proj);
+        }
+
+        if (maxA < minB || maxB < minA) {
+          return false; // found a separating axis
+        }
+      }
+    }
+    return true; // no separating axis = overlap
   }
   editFenceByIndex(index: number) {
     if (index < 0 || index >= this.polygons.length) return;
@@ -1848,8 +1798,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         } else if (gf.points?.length > 2) {
           // fallback: generic polygon
           if (this.isPointInPolygon({ x: r.x, y: r.y }, gf.points)) {
-           insideFence = { color: gf.color || 'red', name: gf.name || 'Unnamed Fence' };
-          break;
+            insideFence = {
+              color: gf.color || 'red',
+              name: gf.name || 'Unnamed Fence',
+            };
+            break;
           }
         }
       }
