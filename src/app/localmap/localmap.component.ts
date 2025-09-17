@@ -172,10 +172,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.mapForm = this.formBuilder.group({
       fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
       shapeMode: ['circle', Validators.required],
-      circleRadius: [3],
-      squareSize: [2],
-      triangleBase: [2],
-      triangleHeight: [1],
+      circleRadius: [3, Validators.required],
+      squareSize: [2 , Validators.required ],
+      triangleBase: [2, Validators.required],
+      triangleHeight: [1, Validators.required],
       color: ['#ff0000', Validators.required],
       isDrag: [true],
       isResize: [true],
@@ -207,18 +207,23 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.modalService.open(this.fenceModal, { backdrop: 'static' });
   }
   onToolSubmit(modal: any) {
-    if (this.editingShape) {
-      // update existing
-      this.editingShape.name = this.mapForm.value.fenceName;
-      this.editingShape.color = this.mapForm.value.color;
-      this.editingShape.isDraggable = this.mapForm.value.isDrag;
-      this.editingShape.isResizable = this.mapForm.value.isResize;
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-    } else {
-      // store new tool
-      this.pendingTool = this.mapForm.value;
+    if (this.mapForm.valid) {
+      
+      if (this.editingShape) {
+        // update existing
+        this.editingShape.name = this.mapForm.value.fenceName;
+        this.editingShape.color = this.mapForm.value.color;
+        this.editingShape.isDraggable = this.mapForm.value.isDrag;
+        this.editingShape.isResizable = this.mapForm.value.isResize;
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      } else {
+        // store new tool
+        this.pendingTool = this.mapForm.value;
+      }
+      modal.close();
+    }else{
+
     }
-    modal.close();
   }
   ngAfterViewInit(): void {
     const img = this.mapImage.nativeElement;
@@ -503,9 +508,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
+
     const { x, y } = this.getTransformedCoords(event);
-    console.log('x  , y', x, y);
-    if (!this.pendingTool && this.shapeMode !== 'free' && event.button === 0) {
+    // store last down for drag-distance checks
+    this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
+    this.dragDistance = 0;
+    this.suppressClick = false;
+
+    // RIGHT CLICK: keep your existing behaviour for right-button panning if you want
+    if (event.button === 2) {
       this.isPanning = true;
       this.dragStart = {
         x: event.clientX - this.offsetX,
@@ -513,25 +524,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       };
       return;
     }
-    console.log('SHAP', this.shapeMode);
 
-    if (this.shapeMode === 'free') {
-      console.log('SHA', this.shapeMode);
-      if (!this.isDrawingShape) {
-        this.currentPolygon = [];
+    // ONLY respond to left-button from here on
+    if (event.button !== 0) return;
+
+    // --- FIRST: check hovered / handles / existing shapes (hit-testing) ---
+    // Recompute hoveredShape (optional if already set via mousemove)
+    let foundHover = false;
+    for (let i = this.polygons.length - 1; i >= 0; i--) {
+      if (this.isPointInShape({ x, y }, this.polygons[i])) {
+        this.hoveredShape = this.polygons[i];
+        foundHover = true;
+        break;
       }
-      this.currentPolygon.push({ x, y });
-      this.isDrawingShape = true;
-      this.redraw();
-      return;
     }
+    if (!foundHover) this.hoveredShape = null;
 
-    // if (!this.isInsideBoundary(x, y)) {
-    //   alert('Click outside boundary');
-    //   return;
-    // }
-
+    // If there's a hovered shape, prioritize resizing / dragging that shape
     if (this.hoveredShape) {
+      // check handle for circle resize
       if (this.hoveredShape.isResizable) {
         if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
           const center = this.toCanvasCoords(
@@ -543,23 +554,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             this.hoveredShape.endY!
           );
           const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
-
           const handle = { x: center.x + radius, y: center.y };
-          const mouse = this.toCanvasCoords(x, y);
+          const mouseCanvas = this.toCanvasCoords(x, y);
           if (
-            Math.hypot(mouse.x - handle.x, mouse.y - handle.y) <
+            Math.hypot(mouseCanvas.x - handle.x, mouseCanvas.y - handle.y) <
             this.HANDLE_TOLERANCE
           ) {
             this.resizingShape = this.hoveredShape;
             this.activeHandleIndex = 0;
-            return;
-          }
-          if (this.isPointInShape({ x, y }, this.hoveredShape)) {
-            this.draggingShape = this.hoveredShape;
-            this.dragOffset = { x, y };
             this.originalPoints = [
-              { x: this.draggingShape.startX!, y: this.draggingShape.startY! },
-              { x: this.draggingShape.endX!, y: this.draggingShape.endY! },
+              { x: this.hoveredShape.startX!, y: this.hoveredShape.startY! },
+              { x: this.hoveredShape.endX!, y: this.hoveredShape.endY! },
             ];
             return;
           }
@@ -567,21 +572,20 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.hoveredShape.mode === 'square' ||
           this.hoveredShape.mode === 'triangle'
         ) {
-          const cornersWorld = this.getShapeCorners(this.hoveredShape); // returns world coords
-          // convert corners to canvas coords before comparing with mouse
+          const cornersWorld = this.getShapeCorners(this.hoveredShape);
+          const mouseCanvas = this.toCanvasCoords(x, y);
           for (let i = 0; i < cornersWorld.length; i++) {
             const cCanvas = this.toCanvasCoords(
               cornersWorld[i].x,
               cornersWorld[i].y
             );
-            const mouseCanvas = this.toCanvasCoords(x, y);
             if (
               Math.hypot(mouseCanvas.x - cCanvas.x, mouseCanvas.y - cCanvas.y) <
               this.HANDLE_TOLERANCE
             ) {
               this.resizingShape = this.hoveredShape;
               this.activeHandleIndex = i;
-              this.originalPoints = cornersWorld.map((pt) => ({ ...pt })); // ✅ keep original corners
+              this.originalPoints = cornersWorld.map((pt) => ({ ...pt }));
               return;
             }
           }
@@ -589,16 +593,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.hoveredShape.mode === 'free' &&
           this.hoveredShape.points
         ) {
-          let handleHit = false;
-          const mouse = this.toCanvasCoords(x, y);
-
+          const mouseCanvas = this.toCanvasCoords(x, y);
           for (let i = 0; i < this.hoveredShape.points.length; i++) {
             const pCanvas = this.toCanvasCoords(
               this.hoveredShape.points[i].x,
               this.hoveredShape.points[i].y
             );
             if (
-              Math.hypot(mouse.x - pCanvas.x, mouse.y - pCanvas.y) <
+              Math.hypot(mouseCanvas.x - pCanvas.x, mouseCanvas.y - pCanvas.y) <
               this.HANDLE_TOLERANCE
             ) {
               this.resizingShape = this.hoveredShape;
@@ -606,52 +608,40 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
               this.originalPoints = this.hoveredShape.points.map((pt) => ({
                 ...pt,
               }));
-              handleHit = true;
-              break;
+              return;
             }
-          }
-          if (handleHit) return;
-
-          if (this.isPointInShape({ x, y }, this.hoveredShape)) {
-            this.draggingShape = this.hoveredShape;
-            this.dragOffset = { x, y }; // world coords
-            this.originalPoints = this.hoveredShape.points.map((p) => ({
-              ...p,
-            }));
-            return;
           }
         }
       }
-    }
 
-    for (let i = this.polygons.length - 1; i >= 0; i--) {
-      if (this.isPointInShape({ x, y }, this.polygons[i])) {
-        if (!this.polygons[i].isDraggable) {
+      // If clicked inside hovered shape and it's draggable — start dragging
+      if (this.isPointInShape({ x, y }, this.hoveredShape)) {
+        if (!this.hoveredShape.isDraggable) {
           this.clickedNonDraggableShape = true;
           this.currentShape = null;
           this.isDrawingShape = false;
           return;
         }
-        this.draggingShape = this.polygons[i];
+        this.draggingShape = this.hoveredShape;
         this.dragOffset = { x, y };
-        if (this.draggingShape.mode === 'free' && this.draggingShape.points)
+        if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
           this.originalPoints = this.draggingShape.points.map((p) => ({
             ...p,
           }));
-        else
+        } else {
           this.originalPoints = [
             { x: this.draggingShape.startX!, y: this.draggingShape.startY! },
             { x: this.draggingShape.endX!, y: this.draggingShape.endY! },
           ];
+        }
         return;
       }
     }
 
-    this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
-    this.dragDistance = 0;
-    this.suppressClick = false;
+    // --- If we reached here, click did NOT hit any shape/handle -- start panning OR start drawing depending on tool ---
 
-    if (event.button === 2) {
+    // If no tool selected (shapeMode is null) and no pendingTool, left-click should pan
+    if (!this.pendingTool && !this.shapeMode) {
       this.isPanning = true;
       this.dragStart = {
         x: event.clientX - this.offsetX,
@@ -659,35 +649,39 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       };
       return;
     }
-    if (event.button !== 0) return;
 
-    if (this.shapeMode === 'circle') {
-      this.currentShape = { mode: 'circle', startX: x, startY: y };
+    // If pendingTool exists, or a shapeMode is active, handle drawing behaviour:
+    // Free mode: start free poly (only if shapeMode === 'free' or pendingTool requests free)
+    if (
+      this.shapeMode === 'free' ||
+      (this.pendingTool && this.pendingTool.shapeMode === 'free')
+    ) {
+      if (!this.isDrawingShape) this.currentPolygon = [];
+      this.currentPolygon.push({ x, y });
       this.isDrawingShape = true;
-    } else if (this.shapeMode === 'square') {
-      this.currentShape = {
-        mode: 'square',
-        startX: x,
-        startY: y,
-        endX: x,
-        endY: y,
-        isDraggable: this.mapForm.value.isDrag,
-        isResizable: this.mapForm.value.isResize,
-      };
-      this.isDrawingShape = true;
-    } else if (this.shapeMode === 'triangle') {
-      this.currentShape = {
-        mode: 'triangle',
-        startX: x,
-        startY: y,
-        endX: x,
-        endY: y,
-        isDraggable: this.mapForm.value.isDrag,
-        isResizable: this.mapForm.value.isResize,
-      };
-      this.isDrawingShape = true;
-    } else {
+      this.redraw();
+      return;
     }
+
+    // Otherwise for fixed shapes: prepare currentShape for drawing (mouseup will finalize)
+    if (this.shapeMode || this.pendingTool) {
+      const mode = this.pendingTool
+        ? this.pendingTool.shapeMode
+        : this.shapeMode!;
+      this.currentShape = {
+        mode,
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
+        isDraggable: this.mapForm.value.isDrag,
+        isResizable: this.mapForm.value.isResize,
+      } as Shape;
+      this.isDrawingShape = true;
+      return;
+    }
+
+    // fallback: nothing to do
   }
   private redraw() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
@@ -989,7 +983,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   isNearHandle(shape: Shape | null, mouseCanvas: { x: number; y: number }) {
     if (!shape) return null;
-    const tol = 15 / this.scale; // tolerance adjusted for zoom
+    const tol = 10 * this.scale; // tolerance adjusted for zoom
 
     if (shape.mode === 'circle' && shape.radius) {
       const center = this.toCanvasCoords(shape.startX!, shape.startY!);
@@ -1101,14 +1095,28 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.pendingTool = null;
         return;
       }
+if (newShape) {
+  // 🔴 Duplicate check
+  if (this.isDuplicateName(newShape.name)) {
+    alert('Fence name must be unique!');
+    return;
+  }
 
-      if (newShape && !this.doesShapeOverlap(newShape)) {
-        this.polygons.push(newShape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        this.redraw();
-      } else if (newShape) {
-        alert('Invalid shape: overlaps another!');
-      }
+  if (!this.doesShapeOverlap(newShape)) {
+    this.polygons.push(newShape);
+    localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+    this.redraw();
+  } else {
+    alert('Invalid shape: overlaps another!');
+  }
+}
+      // if (newShape && !this.doesShapeOverlap(newShape)) {
+      //   this.polygons.push(newShape);
+      //   localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      //   this.redraw();
+      // } else if (newShape) {
+      //   alert('Invalid shape: overlaps another!');
+      // }
 
       this.pendingTool = null;
       return;
@@ -1212,6 +1220,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   @HostListener('dblclick', ['$event'])
   onDoubleClick(event: MouseEvent) {
     const { x, y } = this.getTransformedCoords(event);
+
+    // ✅ Case 1: Edit existing fence on dblclick inside shape
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
         this.nameChange = true;
@@ -1220,10 +1230,32 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
 
-    if (this.shapeMode === 'free' && this.currentPolygon.length > 2) {
-      const shape: Shape = { mode: 'free', points: [...this.currentPolygon] };
+    // ✅ Case 2: Finalize free polygon
+    if (
+      this.shapeMode === 'free' &&
+      this.isDrawingShape &&
+      this.currentPolygon.length > 2
+    ) {
+      const fenceName = this.mapForm.controls['fenceName'].value;
+      const isDrag = this.mapForm.controls['isDrag'].value;
+      const isResize = this.mapForm.controls['isResize'].value;
+      const color = this.mapForm.controls['color'].value;
 
-      if (this.doesShapeOverlap(shape)) {
+      if (!fenceName) {
+        alert('Please enter a name for the fence.');
+        return;
+      }
+
+      const newShape: Shape = {
+        mode: 'free',
+        points: [...this.currentPolygon],
+        name: fenceName,
+        isDraggable: isDrag,
+        isResizable: isResize,
+        color: color,
+      };
+
+      if (this.doesShapeOverlap(newShape)) {
         alert('Invalid polygon: overlaps with existing shape!');
         this.currentPolygon = [];
         this.isDrawingShape = false;
@@ -1231,10 +1263,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         return;
       }
 
-      this.finishShape(shape);
+      this.polygons.push(newShape);
+      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
 
+      this.currentPolygon = [];
+      this.shapeMode = null
       this.isDrawingShape = false;
-      // this.currentShape = null;
       this.redraw();
     }
   }
@@ -1271,7 +1305,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   public isDuplicateName(
-    name: string | null,
+    name?: string | null,
     ignoreShape?: Shape | null
   ): boolean {
     if (!name) return false;
@@ -1469,7 +1503,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResize: this.selectedFence.isResizable || false,
     });
 
-    const modalRef = this.modalService.open(this.fenceModal, {
+    const modalRef = this.modalService.open(this.geofenceToolModal, {
       backdrop: 'static',
     });
 

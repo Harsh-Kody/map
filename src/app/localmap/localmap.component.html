@@ -147,9 +147,15 @@
   </form>
 </ng-template>
 <ng-template #geofenceToolModal let-modal>
-  <form [formGroup]="mapForm" (ngSubmit)="onToolSubmit(modal)">
+  <form
+    [formGroup]="mapForm"
+    #mapFormDirective="ngForm"
+    (ngSubmit)="onToolSubmit(modal)"
+  >
     <div class="modal-header">
-      <h5 class="modal-title">Add Geofence Tool</h5>
+      <h5 class="modal-title">
+        {{ isEditing ? "Edit Fence" : "Create Fence" }}
+      </h5>
       <button
         type="button"
         class="btn-close"
@@ -161,6 +167,12 @@
       <div class="mb-3">
         <label>Fence Name</label>
         <input type="text" class="form-control" formControlName="fenceName" />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('fenceName','required')) {
+        <div class="text-danger">Fence Name is required</div>
+        }@else if (hasError('fenceName','duplicateName')) {
+        <div class="text-danger">Please enter a unique name</div>
+        } }
       </div>
 
       <!-- Select Shape -->
@@ -182,6 +194,10 @@
           class="form-control"
           formControlName="circleRadius"
         />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('circleRadius','required')) {
+        <div class="text-danger">Size is required</div>
+        }}
       </div>
 
       <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'square'">
@@ -191,6 +207,10 @@
           class="form-control"
           formControlName="squareSize"
         />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('squareSize','required')) {
+        <div class="text-danger">Size is required</div>
+        }}
       </div>
 
       <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'triangle'">
@@ -200,12 +220,20 @@
           class="form-control"
           formControlName="triangleBase"
         />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('triangleBase','required')) {
+        <div class="text-danger">Size is required</div>
+        }}
         <label>Height</label>
         <input
           type="number"
           class="form-control"
           formControlName="triangleHeight"
         />
+        @if (mapFormDirective.submitted) { @if
+        (hasError('triangleHeight','required')) {
+        <div class="text-danger">Size is required</div>
+        }}
       </div>
 
       <!-- Select Color -->
@@ -248,7 +276,9 @@
       <button class="btn btn-secondary" (click)="modal.dismiss()">
         Cancel
       </button>
-      <button class="btn btn-primary" type="submit">Confirm</button>
+      <button class="btn btn-primary">
+        {{ isEditing ? "Save Changes" : "Create" }}
+      </button>
     </div>
   </form>
 </ng-template>
