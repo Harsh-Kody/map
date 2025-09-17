@@ -74,7 +74,7 @@
     </p>
   </div>
 </div>
-<ng-template #fenceModal let-modal>
+<!-- <ng-template #fenceModal let-modal>
   <form [formGroup]="mapForm" (ngSubmit)="onSubmit(modal)">
     <div class="modal-header">
       <h5 class="modal-title">Create Geofence</h5>
@@ -91,7 +91,6 @@
         <input type="text" class="form-control" formControlName="fenceName" />
       </div>
 
-      <!-- Select Shape -->
       <div class="mb-3">
         <label>Select Shape</label>
         <select class="form-select" formControlName="shapeMode">
@@ -102,7 +101,6 @@
         </select>
       </div>
 
-      <!-- Select Color -->
       <div class="mb-3">
         <label>Select Color</label>
         <div class="d-flex gap-2">
@@ -117,7 +115,6 @@
         </div>
       </div>
 
-      <!-- Draggable / Resizable -->
       <div class="form-check">
         <input
           type="checkbox"
@@ -145,7 +142,7 @@
       <button class="btn btn-primary" type="submit">Create</button>
     </div>
   </form>
-</ng-template>
+</ng-template> -->
 <ng-template #geofenceToolModal let-modal>
   <form
     [formGroup]="mapForm"

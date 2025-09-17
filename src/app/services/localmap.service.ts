@@ -36,7 +36,6 @@ export class LocalmapService {
             this.localisationSubject.next(status);
           }
         }
-        console.log('data', data);
         if (data.full_pose?.pose) {
           const pose = data.full_pose.pose;
           const drivingFlag = data.full_pose.driving;
