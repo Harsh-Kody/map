@@ -2,10 +2,8 @@
   <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
   <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
   <div class="controls">
-    <button (click)="selectShape('free')">Free</button>
-    <button (click)="selectShape('circle')">Circle</button>
-    <button (click)="selectShape('square')">Square</button>
-    <button (click)="selectShape('triangle')">Triangle</button>
+    <button (click)="startAddGeofence()">Add Geofence</button>
+
     <button (click)="zoomIn()">+</button>
     <button (click)="zoomOut()">-</button>
     <button (click)="resetView()">Reset</button>
@@ -15,80 +13,74 @@
     </button>
     <button (click)="togglePath()">Toggle Path</button>
     <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
-    <div class="fence-log">
-      <!-- <h3>Fence Entry Log</h3> -->
-      <ul>
-        <li *ngFor="let log of fenceLog">
-          {{ log.robot }} → FenceName - '{{ log.fenceName }}' at
-          {{ log.time | date : "shortTime" }}
-        </li>
-      </ul>
-    </div>
-    <div class="shape-options" *ngIf="shapeMode !== 'free'">
-      <ng-container [ngSwitch]="shapeMode">
-        <div *ngSwitchCase="'circle'">
-          <label
-            >Radius: <input type="number" [(ngModel)]="circleRadius"
-          /></label>
-        </div>
-        <div *ngSwitchCase="'square'">
-          <label
-            >Side length: <input type="number" [(ngModel)]="squareSize"
-          /></label>
-        </div>
-        <div *ngSwitchCase="'triangle'">
-          <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
-          ><br />
-          <label
-            >Height: <input type="number" [(ngModel)]="triangleHeight"
-          /></label>
-        </div>
-      </ng-container>
+  </div>
+
+  <div class="fence-log">
+    <!-- <h3>Fence Entry Log</h3> -->
+    <ul>
+      <li *ngFor="let log of fenceLog">
+        {{ log.robot }} → FenceName - '{{ log.fenceName }}' at
+        {{ log.time | date : "shortTime" }}
+      </li>
+    </ul>
+  </div>
+  <div class="shape-options" *ngIf="shapeMode !== 'free'">
+    <ng-container [ngSwitch]="shapeMode">
+      <div *ngSwitchCase="'circle'">
+        <label
+          >Radius: <input type="number" [(ngModel)]="circleRadius"
+        /></label>
+      </div>
+      <div *ngSwitchCase="'square'">
+        <label
+          >Side length: <input type="number" [(ngModel)]="squareSize"
+        /></label>
+      </div>
+      <div *ngSwitchCase="'triangle'">
+        <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
+        ><br />
+        <label
+          >Height: <input type="number" [(ngModel)]="triangleHeight"
+        /></label>
+      </div>
+    </ng-container>
+  </div>
+</div>
+<div class="robot-info">
+  <h3>Robot Coords</h3>
+  <div *ngIf="robots.length > 0; else noRobot">
+    <div *ngFor="let r of robots">
+      <strong>{{ r.name || "Robot " }}</strong
+      ><br />
+      X: {{ r.x | number : "1.2-2" }} <br />
+      Y: {{ r.y | number : "1.2-2" }} <br />
+      Z: {{ r.z }} <br />
+      <hr />
     </div>
   </div>
-  <div class="robot-info">
-    <h3>Robot Coords</h3>
-    <div *ngIf="robots.length > 0; else noRobot">
-      <div *ngFor="let r of robots">
-        <strong>{{ r.name || "Robot " }}</strong
-        ><br />
-        X: {{ r.x | number : "1.2-2" }} <br />
-        Y: {{ r.y | number : "1.2-2" }} <br />
-        Z: {{ r.z }} <br />
-        <hr />
-      </div>
-    </div>
-    <ng-template #noRobot>
-      <p>No robots online.</p>
-    </ng-template>
-    <div class="meta-data" *ngIf="metaData.DistanceTravelled !== undefined">
-      <!-- <h3>Meta </h3> -->
-      <p>
-        Distance Travelled:
-        {{ metaData.DistanceTravelled | number : "1.2-2" }} m
-      </p>
-    </div>
-    <div class="localisation-status" *ngIf="localisationStatus">
-      <p>
-        Localisation Status: <strong>{{ localisationStatus }}</strong>
-      </p>
-    </div>
+  <ng-template #noRobot>
+    <p>No robots online.</p>
+  </ng-template>
+  <div class="meta-data" *ngIf="metaData.DistanceTravelled !== undefined">
+    <!-- <h3>Meta </h3> -->
+    <p>
+      Distance Travelled:
+      {{ metaData.DistanceTravelled | number : "1.2-2" }} m
+    </p>
+  </div>
+  <div class="localisation-status" *ngIf="localisationStatus">
+    <p>
+      Localisation Status: <strong>{{ localisationStatus }}</strong>
+    </p>
   </div>
 </div>
 <ng-template #fenceModal let-modal>
-  <form
-    [formGroup]="mapForm"
-    #mapFormDirective="ngForm"
-    (ngSubmit)="onSubmit(modal)"
-  >
+  <form [formGroup]="mapForm" (ngSubmit)="onSubmit(modal)">
     <div class="modal-header">
-      <h5 class="modal-title">
-        {{ isEditing ? "Edit Fence" : "Create Fence" }}
-      </h5>
+      <h5 class="modal-title">Create Geofence</h5>
       <button
         type="button"
         class="btn-close"
-        aria-label="Close"
         (click)="modal.dismiss()"
       ></button>
     </div>
@@ -97,32 +89,52 @@
       <div class="mb-3">
         <label>Fence Name</label>
         <input type="text" class="form-control" formControlName="fenceName" />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('fenceName','required')) {
-        <div class="text-danger">Fence Name is required</div>
-        }@else if (hasError('fenceName','duplicateName')) {
-        <div class="text-danger">Please enter a unique name</div>
-        } }
       </div>
 
+      <!-- Select Shape -->
+      <div class="mb-3">
+        <label>Select Shape</label>
+        <select class="form-select" formControlName="shapeMode">
+          <option value="circle">Circle</option>
+          <option value="square">Square</option>
+          <option value="triangle">Triangle</option>
+          <option value="free">Free</option>
+        </select>
+      </div>
+
+      <!-- Select Color -->
+      <div class="mb-3">
+        <label>Select Color</label>
+        <div class="d-flex gap-2">
+          <button
+            type="button"
+            *ngFor="let c of colors"
+            class="color-btn"
+            [style.background]="c"
+            [class.selected]="mapForm.value.color === c"
+            (click)="mapForm.patchValue({ color: c })"
+          ></button>
+        </div>
+      </div>
+
+      <!-- Draggable / Resizable -->
       <div class="form-check">
         <input
-          class="form-check-input"
           type="checkbox"
-          id="draggableCheck"
+          class="form-check-input"
+          id="drag"
           formControlName="isDrag"
         />
-        <label class="form-check-label" for="draggableCheck">Draggable</label>
+        <label class="form-check-label" for="drag">Draggable</label>
       </div>
-
       <div class="form-check">
         <input
-          class="form-check-input"
           type="checkbox"
-          id="resizableCheck"
+          class="form-check-input"
+          id="resize"
           formControlName="isResize"
         />
-        <label class="form-check-label" for="resizableCheck">Resizable</label>
+        <label class="form-check-label" for="resize">Resizable</label>
       </div>
     </div>
 
@@ -130,9 +142,113 @@
       <button class="btn btn-secondary" (click)="modal.dismiss()">
         Cancel
       </button>
-      <button class="btn btn-primary">
-        {{ isEditing ? "Save Changes" : "Create" }}
+      <button class="btn btn-primary" type="submit">Create</button>
+    </div>
+  </form>
+</ng-template>
+<ng-template #geofenceToolModal let-modal>
+  <form [formGroup]="mapForm" (ngSubmit)="onToolSubmit(modal)">
+    <div class="modal-header">
+      <h5 class="modal-title">Add Geofence Tool</h5>
+      <button
+        type="button"
+        class="btn-close"
+        (click)="modal.dismiss()"
+      ></button>
+    </div>
+
+    <div class="modal-body">
+      <div class="mb-3">
+        <label>Fence Name</label>
+        <input type="text" class="form-control" formControlName="fenceName" />
+      </div>
+
+      <!-- Select Shape -->
+      <div class="mb-3">
+        <label>Select Shape</label>
+        <select class="form-select" formControlName="shapeMode">
+          <option value="circle">Circle</option>
+          <option value="square">Square</option>
+          <option value="triangle">Triangle</option>
+          <option value="free">Free</option>
+        </select>
+      </div>
+
+      <!-- Shape Size -->
+      <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'circle'">
+        <label>Radius</label>
+        <input
+          type="number"
+          class="form-control"
+          formControlName="circleRadius"
+        />
+      </div>
+
+      <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'square'">
+        <label>Side Length</label>
+        <input
+          type="number"
+          class="form-control"
+          formControlName="squareSize"
+        />
+      </div>
+
+      <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'triangle'">
+        <label>Base</label>
+        <input
+          type="number"
+          class="form-control"
+          formControlName="triangleBase"
+        />
+        <label>Height</label>
+        <input
+          type="number"
+          class="form-control"
+          formControlName="triangleHeight"
+        />
+      </div>
+
+      <!-- Select Color -->
+      <div class="mb-3">
+        <label>Select Color</label>
+        <div class="d-flex gap-2">
+          <button
+            type="button"
+            *ngFor="let c of colors"
+            class="color-btn"
+            [style.background]="c"
+            [class.selected]="mapForm.value.color === c"
+            (click)="mapForm.patchValue({ color: c })"
+          ></button>
+        </div>
+      </div>
+
+      <!-- Draggable / Resizable -->
+      <div class="form-check">
+        <input
+          type="checkbox"
+          class="form-check-input"
+          id="drag"
+          formControlName="isDrag"
+        />
+        <label class="form-check-label" for="drag">Draggable</label>
+      </div>
+      <div class="form-check">
+        <input
+          type="checkbox"
+          class="form-check-input"
+          id="resize"
+          formControlName="isResize"
+        />
+        <label class="form-check-label" for="resize">Resizable</label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="modal.dismiss()">
+        Cancel
       </button>
+      <button class="btn btn-primary" type="submit">Confirm</button>
     </div>
   </form>
 </ng-template>
