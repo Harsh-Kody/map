@@ -40,7 +40,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private nameChange: boolean = false;
   private isPanning = false;
   private originalPoints: { x: number; y: number }[] = [];
-   isDrawingShape = false;
+  isDrawingShape = false;
   private fittedScale = 1;
   polygons: Shape[] = [];
   currentPolygon: { x: number; y: number }[] = [];
@@ -61,7 +61,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   robot: RobotLocation | null = null;
   private handleSize = 5;
   deleteMode: boolean = false;
-  private hoveredShape: Shape | null = null;
+   hoveredShape: Shape | null = null;
   mapImageSrc: string | null = null;
   private readonly HANDLE_TOLERANCE = 20;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
@@ -514,6 +514,44 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.currentShape.endY = y;
       this.redraw();
     }
+  }
+  completeFreeGeofence() {
+    if (this.currentPolygon.length >= 3) {
+      this.polygons.push({
+        mode: 'free',
+        points: [...this.currentPolygon] /* ...otherProps */,
+      });
+      this.currentPolygon = [];
+      this.isDrawingShape = false;
+      this.shapeMode = null;
+      this.redraw();
+    }
+  }
+
+  // Undo the last placed point in the currentPolygon
+  undoLastFreePoint() {
+    if (this.currentPolygon.length > 0) {
+      this.currentPolygon.pop();
+      this.redraw();
+    }
+  }
+
+  // Clone/copy the selected shape and push to polygons[]
+  copyGeofence(shape: Shape | null) {
+    const newShape = JSON.parse(JSON.stringify(shape));
+    // Optionally offset newShape's coordinates here for visibility
+    if (newShape.points) {
+      newShape.points = newShape.points.map((pt: any) => ({
+        x: pt.x + 1,
+        y: pt.y + 1,
+      }));
+    }
+    if (newShape.startX !== undefined) {
+      newShape.startX += 1;
+      newShape.endX += 1; // etc.
+    }
+    this.polygons.push(newShape);
+    this.redraw();
   }
   finalizeShape() {
     if (!this.isDrawingShape || !this.currentPolygon.length) {
@@ -1067,7 +1105,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (this.shapeMode === 'free') {
       return; // don't save free polygon here, handled by dblclick
     }
-    console.log("shapmode",this.shapeMode);
+    console.log('shapmode', this.shapeMode);
     console.log('sdsd');
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);

@@ -12,6 +12,17 @@
       {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
     </button>
     <button (click)="togglePath()">Toggle Path</button>
+    <div *ngIf="shapeMode === 'free' && isDrawingShape">
+      <button (click)="completeFreeGeofence()">Complete Free Geofence</button>
+      <button
+        (click)="undoLastFreePoint()"
+        [disabled]="currentPolygon.length <= 1"
+      >
+        Undo
+      </button>
+    </div>
+    <!-- <div *ngIf="hoveredShape"> -->
+    <button (click)="copyGeofence(hoveredShape)">Copy</button>
     <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
       Finalize Shape
     </button>
