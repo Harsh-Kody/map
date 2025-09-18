@@ -40,7 +40,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private nameChange: boolean = false;
   private isPanning = false;
   private originalPoints: { x: number; y: number }[] = [];
-  private isDrawingShape = false;
+  isDrawingShape = false;
   private fittedScale = 1;
   polygons: Shape[] = [];
   currentPolygon: { x: number; y: number }[] = [];
@@ -61,7 +61,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   robot: RobotLocation | null = null;
   private handleSize = 5;
   deleteMode: boolean = false;
-  private hoveredShape: Shape | null = null;
+  hoveredShape: Shape | null = null;
   mapImageSrc: string | null = null;
   private readonly HANDLE_TOLERANCE = 20;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
@@ -660,16 +660,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // If pendingTool exists, or a shapeMode is active, handle drawing behaviour:
     // Free mode: start free poly (only if shapeMode === 'free' or pendingTool requests free)
-    if (
-      this.shapeMode === 'free' ||
-      (this.pendingTool && this.pendingTool.shapeMode === 'free')
-    ) {
-      if (!this.isDrawingShape) this.currentPolygon = [];
-      this.currentPolygon.push({ x, y });
+    if (!this.isDrawingShape) {
+      this.currentPolygon = [];
       this.isDrawingShape = true;
+      // Do NOT push the point here; wait for actual mouse click event
       this.redraw();
       return;
     }
+    // For subsequent clicks:
+    this.currentPolygon.push({ x, y });
+    this.redraw();
 
     // Otherwise for fixed shapes: prepare currentShape for drawing (mouseup will finalize)
     if (this.shapeMode || this.pendingTool) {
@@ -972,7 +972,44 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.ctx.restore();
     return result;
   }
+  completeFreeGeofence() {
+    if (this.currentPolygon.length >= 3) {
+      this.polygons.push({
+        mode: 'free',
+        points: [...this.currentPolygon] /* ...otherProps */,
+      });
+      this.currentPolygon = [];
+      this.isDrawingShape = false;
+      this.shapeMode = null;
+      this.redraw();
+    }
+  }
 
+  // Undo the last placed point in the currentPolygon
+  undoLastFreePoint() {
+    if (this.currentPolygon.length > 0) {
+      this.currentPolygon.pop();
+      this.redraw();
+    }
+  }
+
+  // Clone/copy the selected shape and push to polygons[]
+  copyGeofence(shape: Shape | null) {
+    const newShape = JSON.parse(JSON.stringify(shape));
+    // Optionally offset newShape's coordinates here for visibility
+    if (newShape.points) {
+      newShape.points = newShape.points.map((pt: any) => ({
+        x: pt.x + 1,
+        y: pt.y + 1,
+      }));
+    }
+    if (newShape.startX !== undefined) {
+      newShape.startX += 1;
+      newShape.endX += 1; // etc.
+    }
+    this.polygons.push(newShape);
+    this.redraw();
+  }
   isNearHandle(shape: Shape | null, mouseCanvas: { x: number; y: number }) {
     if (!shape) return null;
     const tol = 10 * this.scale; // tolerance adjusted for zoom
