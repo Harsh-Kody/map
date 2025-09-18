@@ -71,6 +71,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
   metaData: any = {};
+  private readonly MAP_W = 31.9;
+  private readonly MAP_H = 32.2;
   private readonly WORLD_SCALE = 30.929;
   private ignoreNextClickAfterEdit = false;
   coord: any;
