@@ -71,9 +71,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
   metaData: any = {};
-  private readonly MAP_W = 31.9;
-  private readonly MAP_H = 33.2;
   private readonly WORLD_SCALE = 30.929;
+  private ignoreNextClickAfterEdit = false;
   coord: any;
   robots: any[] = [];
   lastFences: { [robotId: number]: string | null } = {};
@@ -464,6 +463,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return;
     }
     if (this.draggingShape) {
+      if (event.buttons !== 1) {
+        // mouse released but we never got proper mouseup
+        this.draggingShape = null;
+        this.resizingShape = null;
+        this.activeHandleIndex = null;
+        this.originalPoints = [];
+        // this.mapCanvas.nativeElement.style.cursor = 'default';
+        return;
+      }
       const dx = x - this.dragOffset.x;
       const dy = y - this.dragOffset.y;
 
@@ -504,14 +512,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
-
+    // if (this.ignoreNextClickAfterEdit) {
+    //   this.ignoreNextClickAfterEdit = false;
+    //   return;
+    // }
     const { x, y } = this.getTransformedCoords(event);
-    // store last down for drag-distance checks
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
 
-    // RIGHT CLICK: keep your existing behaviour for right-button panning if you want
     if (event.button === 2) {
       this.isPanning = true;
       this.dragStart = {
@@ -611,7 +620,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
 
       // If clicked inside hovered shape and it's draggable — start dragging
-      if (this.isPointInShape({ x, y }, this.hoveredShape)) {
+      if (!this.isEditing && this.isPointInShape({ x, y }, this.hoveredShape)) {
         if (!this.hoveredShape.isDraggable) {
           this.clickedNonDraggableShape = true;
           this.currentShape = null;
@@ -619,6 +628,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           return;
         }
         this.draggingShape = this.hoveredShape;
+        console.log('dragging shape ', this.draggingShape);
         this.dragOffset = { x, y };
         if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
           this.originalPoints = this.draggingShape.points.map((p) => ({
@@ -761,10 +771,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const corners = this.getShapeCorners(this.hoveredShape);
 
         for (let c of corners) {
+          const cCanvas = this.toCanvasCoords(c.x, c.y);
           this.ctx.beginPath();
           this.ctx.rect(
-            c.x - scaledHandleSize / 2,
-            c.y - scaledHandleSize / 2,
+            cCanvas.x - scaledHandleSize / 2,
+            cCanvas.y - scaledHandleSize / 2,
             scaledHandleSize,
             scaledHandleSize
           );
@@ -839,8 +850,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   onCanvasClick(event: MouseEvent) {
     if (event.button !== 0) return;
-    if (event.target !== this.mapCanvas.nativeElement) return;
-
+    // if (event.target !== this.mapCanvas.nativeElement) return;
+    console.log('canvas click');
     const { x, y } = this.getTransformedCoords(event);
     if (this.deleteMode) {
       const { x, y } = this.getTransformedCoords(event);
@@ -960,23 +971,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return result;
   }
 
-  private restoreOriginalShape(shape: Shape) {
-    if (!shape) return;
-
-    if (shape.mode === 'free' && shape.points) {
-      shape.points = this.originalPoints.map((p) => ({ ...p }));
-    } else if (shape.mode === 'circle') {
-      const orig = this.originalPoints[0];
-      shape.startX = orig.x;
-      shape.startY = orig.y;
-      shape.radius = this.originalPoints[1]?.x ?? this.circleRadius;
-    } else if (shape.mode === 'square' || shape.mode === 'triangle') {
-      shape.startX = this.originalPoints[0].x;
-      shape.startY = this.originalPoints[0].y;
-      shape.endX = this.originalPoints[1].x;
-      shape.endY = this.originalPoints[1].y;
-    }
-  }
   isNearHandle(shape: Shape | null, mouseCanvas: { x: number; y: number }) {
     if (!shape) return null;
     const tol = 10 * this.scale; // tolerance adjusted for zoom
@@ -995,13 +989,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         return { kind: 'ew', index: 0 };
       }
     } else if (shape.mode === 'square' || shape.mode === 'triangle') {
-      // Squares and triangles: use transformed corners
       const corners = this.getShapeCorners(shape);
       for (let i = 0; i < corners.length; i++) {
-        const c = corners[i];
+        const cCanvas = this.toCanvasCoords(corners[i].x, corners[i].y); // ✅ FIX
         if (
-          Math.abs(mouseCanvas.x - c.x) < tol &&
-          Math.abs(mouseCanvas.y - c.y) < tol
+          Math.abs(mouseCanvas.x - cCanvas.x) < tol &&
+          Math.abs(mouseCanvas.y - cCanvas.y) < tol
         ) {
           return { kind: 'nwse', index: i };
         }
@@ -1040,7 +1033,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseUp(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
+    if (this.isEditing) {
+      // block all drag/resizing after edit modal until next interaction
+      this.clickedNonDraggableShape = false;
+      this.draggingShape = null;
+      this.resizingShape = null;
 
+      return;
+    }
     // ✅ Handle modal-created tools (pendingTool)
     if (this.pendingTool) {
       const tool = this.pendingTool;
@@ -1153,14 +1153,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     if (this.draggingShape) {
+      console.log('dragging');
       const idx = this.polygons.indexOf(this.draggingShape);
       if (this.doesShapeOverlap(this.draggingShape, idx)) {
-        // revert back
         this.originalCoordinates();
         alert('Invalid move: shape overlaps another!');
       } else {
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        // this.carSocket.updateFences(this.polygons);
       }
       this.isDrawingShape = false;
       this.currentPolygon = [];
@@ -1246,7 +1245,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onDoubleClick(event: MouseEvent) {
     const { x, y } = this.getTransformedCoords(event);
 
-    // ✅ Case 1: Edit existing fence on dblclick inside shape
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
         this.nameChange = true;
@@ -1254,8 +1252,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         return;
       }
     }
-
-    // ✅ Case 2: Finalize free polygon
     if (
       this.shapeMode === 'free' &&
       this.isDrawingShape &&
@@ -1455,11 +1451,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   editFenceByIndex(index: number) {
     if (index < 0 || index >= this.polygons.length) return;
-
     this.isEditing = true;
     this.clickedNonDraggableShape = false;
     this.selectedFence = this.polygons[index];
-
     this.currentShape = null;
     this.isDrawingShape = false;
     this.resizingShape = null;
@@ -1499,15 +1493,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         // this.carSocket.updateFences(this.polygons);
 
         this.resetEditState();
+        // this.ignoreNextClickAfterEdit = true;
         this.redraw();
       })
       .catch(() => {
         this.resetEditState();
+        // this.ignoreNextClickAfterEdit = true;
       });
   }
 
   private resetEditState() {
+    this.isEditing = false;
     this.selectedFence = null;
+    this.currentShape = null;
     this.clickedNonDraggableShape = false;
     this.draggingShape = null;
     this.resizingShape = null;
@@ -1530,20 +1528,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   private getShapeCorners(shape: Shape): { x: number; y: number }[] {
     if (shape.mode === 'square') {
-      const topLeft = this.toCanvasCoords(shape.startX!, shape.startY!);
-      const topRight = this.toCanvasCoords(shape.endX!, shape.startY!);
-      const bottomRight = this.toCanvasCoords(shape.endX!, shape.endY!);
-      const bottomLeft = this.toCanvasCoords(shape.startX!, shape.endY!);
-      return [topLeft, topRight, bottomRight, bottomLeft];
-    } else if (shape.mode === 'triangle') {
-      const midX = shape.startX! * 2 - shape.endX!;
-      const midY = shape.endY!;
-      const p1 = this.toCanvasCoords(shape.startX!, shape.startY!);
-      const p2 = this.toCanvasCoords(shape.endX!, shape.endY!);
-      const p3 = this.toCanvasCoords(midX, midY);
-      return [p1, p2, p3];
-    }
+      const x1 = Math.min(shape.startX!, shape.endX!);
+      const y1 = Math.min(shape.startY!, shape.endY!);
+      const x2 = Math.max(shape.startX!, shape.endX!);
+      const y2 = Math.max(shape.startY!, shape.endY!);
 
+      return [
+        { x: x1, y: y1 }, // top-left
+        { x: x2, y: y1 }, // top-right
+        { x: x2, y: y2 }, // bottom-right
+        { x: x1, y: y2 }, // bottom-left
+      ];
+    } else if (shape.mode === 'triangle') {
+      // use explicit vertices
+      return [
+        { x: shape.startX!, y: shape.startY! }, // bottom-left
+        { x: shape.endX!, y: shape.endY! }, // bottom-right
+        { x: shape.topX!, y: shape.topY! }, // top
+      ];
+    }
     return [];
   }
 
