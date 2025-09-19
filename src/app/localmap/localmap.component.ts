@@ -61,7 +61,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   robot: RobotLocation | null = null;
   private handleSize = 5;
   deleteMode: boolean = false;
-   hoveredShape: Shape | null = null;
+  hoveredShape: Shape | null = null;
   mapImageSrc: string | null = null;
   private readonly HANDLE_TOLERANCE = 20;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
@@ -90,6 +90,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     private formBuilder: FormBuilder,
     private router: Router
   ) {}
+  private shapeToCopy: Shape | null = null;
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
   colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
@@ -536,21 +537,39 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
   }
 
-  // Clone/copy the selected shape and push to polygons[]
   copyGeofence(shape: Shape | null) {
-    const newShape = JSON.parse(JSON.stringify(shape));
-    // Optionally offset newShape's coordinates here for visibility
-    if (newShape.points) {
-      newShape.points = newShape.points.map((pt: any) => ({
+    console.log("shapec" , shape);
+    if (!shape) return;
+
+    // Deep clone
+    const newShape: Shape = JSON.parse(JSON.stringify(shape));
+
+    // Ensure a new unique name (append "_copy")
+    newShape.name = (shape.name || 'Fence') + '_copy';
+
+    // Offset slightly so copy is visible (1 unit shift)
+    if (newShape.mode === 'free' && newShape.points) {
+      newShape.points = newShape.points.map((pt) => ({
         x: pt.x + 1,
         y: pt.y + 1,
       }));
+    } else {
+      if (newShape.startX !== undefined) newShape.startX += 1;
+      if (newShape.startY !== undefined) newShape.startY += 1;
+      if (newShape.endX !== undefined) newShape.endX += 1;
+      if (newShape.endY !== undefined) newShape.endY += 1;
     }
-    if (newShape.startX !== undefined) {
-      newShape.startX += 1;
-      newShape.endX += 1; // etc.
-    }
+
+    // Keep same flags
+    newShape.isDraggable = shape.isDraggable ?? true;
+    newShape.isResizable = shape.isResizable ?? true;
+    newShape.color = shape.color || '#ff0000';
+
+    // Save
     this.polygons.push(newShape);
+    localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+
+    // Redraw
     this.redraw();
   }
   finalizeShape() {
@@ -1318,86 +1337,86 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     return inside;
   }
-  // @HostListener('dblclick', ['$event'])
-  // onDoubleClick(event: MouseEvent) {
-  //   const { x, y } = this.getTransformedCoords(event);
+  @HostListener('dblclick', ['$event'])
+  onDoubleClick(event: MouseEvent) {
+    const { x, y } = this.getTransformedCoords(event);
 
-  //   for (let i = this.polygons.length - 1; i >= 0; i--) {
-  //     if (this.isPointInShape({ x, y }, this.polygons[i])) {
-  //       this.nameChange = true;
-  //       this.editFenceByIndex(i);
-  //       return;
-  //     }
-  //   }
-  //   if (
-  //     this.shapeMode === 'free' &&
-  //     this.isDrawingShape &&
-  //     this.currentPolygon.length > 2
-  //   ) {
-  //     const fenceName = this.mapForm.controls['fenceName'].value;
-  //     const isDrag = this.mapForm.controls['isDrag'].value;
-  //     const isResize = this.mapForm.controls['isResize'].value;
-  //     const color = this.mapForm.controls['color'].value;
+    for (let i = this.polygons.length - 1; i >= 0; i--) {
+      if (this.isPointInShape({ x, y }, this.polygons[i])) {
+        this.nameChange = true;
+        this.editFenceByIndex(i);
+        return;
+      }
+    }
+    // if (
+    //   this.shapeMode === 'free' &&
+    //   this.isDrawingShape &&
+    //   this.currentPolygon.length > 2
+    // ) {
+    //   const fenceName = this.mapForm.controls['fenceName'].value;
+    //   const isDrag = this.mapForm.controls['isDrag'].value;
+    //   const isResize = this.mapForm.controls['isResize'].value;
+    //   const color = this.mapForm.controls['color'].value;
 
-  //     if (!fenceName) {
-  //       alert('Please enter a name for the fence.');
-  //       return;
-  //     }
+    //   if (!fenceName) {
+    //     alert('Please enter a name for the fence.');
+    //     return;
+    //   }
 
-  //     const newShape: Shape = {
-  //       mode: 'free',
-  //       points: [...this.currentPolygon],
-  //       name: fenceName,
-  //       isDraggable: isDrag,
-  //       isResizable: isResize,
-  //       color: color,
-  //     };
+    //   const newShape: Shape = {
+    //     mode: 'free',
+    //     points: [...this.currentPolygon],
+    //     name: fenceName,
+    //     isDraggable: isDrag,
+    //     isResizable: isResize,
+    //     color: color,
+    //   };
 
-  //     if (!this.doesShapeOverlap(newShape)) {
-  //       this.polygons.push(newShape);
-  //       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-  //     }
+    //   if (!this.doesShapeOverlap(newShape)) {
+    //     this.polygons.push(newShape);
+    //     localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+    //   }
 
-  //     this.currentPolygon = [];
-  //     this.shapeMode = null;
-  //     this.isDrawingShape = false;
-  //     this.redraw();
+    //   this.currentPolygon = [];
+    //   this.shapeMode = null;
+    //   this.isDrawingShape = false;
+    //   this.redraw();
 
-  //     // ✅ tell mouseup to skip saving
-  //     this.skipNextMouseUp = true;
-  //   }
-  // }
-  // finishShape(newShape: Shape) {
-  //   this.isEditing = false;
-  //   this.mapForm.reset({
-  //     fenceName: '',
-  //     isDrag: true,
-  //     isResize: true,
-  //   });
+    //   // ✅ tell mouseup to skip saving
+    //   this.skipNextMouseUp = true;
+    // }
+  }
+  finishShape(newShape: Shape) {
+    this.isEditing = false;
+    this.mapForm.reset({
+      fenceName: '',
+      isDrag: true,
+      isResize: true,
+    });
 
-  //   const modalRef = this.modalService.open(this.fenceModal, {
-  //     backdrop: 'static',
-  //   });
+    const modalRef = this.modalService.open(this.fenceModal, {
+      backdrop: 'static',
+    });
 
-  //   modalRef.result
-  //     .then(() => {
-  //       const fenceName = this.mapForm.controls['fenceName'].value;
-  //       const isDrag = this.mapForm.controls['isDrag'].value;
-  //       const isResize = this.mapForm.controls['isResize'].value;
+    modalRef.result
+      .then(() => {
+        const fenceName = this.mapForm.controls['fenceName'].value;
+        const isDrag = this.mapForm.controls['isDrag'].value;
+        const isResize = this.mapForm.controls['isResize'].value;
 
-  //       if (this.isDuplicateName(fenceName)) {
-  //         return;
-  //       }
-  //       newShape.name = fenceName;
-  //       newShape.isDraggable = isDrag;
-  //       newShape.isResizable = isResize;
-  //       this.polygons.push(newShape);
-  //       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-  //       // this.carSocket.updateFences(this.polygons);
-  //       this.redraw();
-  //     })
-  //     .catch(() => {});
-  // }
+        if (this.isDuplicateName(fenceName)) {
+          return;
+        }
+        newShape.name = fenceName;
+        newShape.isDraggable = isDrag;
+        newShape.isResizable = isResize;
+        this.polygons.push(newShape);
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        // this.carSocket.updateFences(this.polygons);
+        this.redraw();
+      })
+      .catch(() => {});
+  }
 
   public isDuplicateName(
     name?: string | null,
@@ -1977,3 +1996,4 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.router.navigate(['/upload-map']);
   }
 }
+	

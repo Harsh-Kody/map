@@ -187,6 +187,8 @@
       </div>
 
       <!-- Select Shape -->
+      @if (!isEditing) {
+
       <div class="mb-3">
         <label>Select Shape</label>
         <select class="form-select" formControlName="shapeMode">
@@ -196,6 +198,7 @@
           <option value="free">Free</option>
         </select>
       </div>
+      }
 
       <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'square'">
         <label>Side Length</label>
