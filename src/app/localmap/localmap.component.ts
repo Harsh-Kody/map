@@ -538,7 +538,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   copyGeofence(shape: Shape | null) {
-    console.log("shapec" , shape);
+    console.log('shapec', shape);
     if (!shape) return;
 
     // Deep clone
@@ -1996,4 +1996,3 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.router.navigate(['/upload-map']);
   }
 }
-	
