@@ -13,7 +13,7 @@
     </button>
     <button (click)="togglePath()">Toggle Path</button>
     <div *ngIf="shapeMode === 'free' && isDrawingShape">
-      <button (click)="completeFreeGeofence()">Complete Free Geofence</button>
+      <!-- <button (click)="completeFreeGeofence()">Complete Free Geofence</button> -->
       <button
         (click)="undoLastFreePoint()"
         [disabled]="currentPolygon.length <= 1"
@@ -73,7 +73,7 @@
     </div>
   </div>
   <ng-template #noRobot>
-    <p>No robots online.</p>
+    <p>No robots onlines.</p>
   </ng-template>
   <div class="meta-data" *ngIf="metaData.DistanceTravelled !== undefined">
     <!-- <h3>Meta </h3> -->
