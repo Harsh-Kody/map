@@ -94,6 +94,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
   colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
+  copyMode: boolean = false;
+  copiedShapeTemplate: Shape | null = null;
   // startAddGeofence() {
   //   this.addingGeofence = true;
   //   this.currentPolygon = [];
@@ -172,7 +174,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   createMapForm() {
     this.mapForm = this.formBuilder.group({
       fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
-      shapeMode: ['circle', Validators.required],
+      shapeMode: [null, Validators.required],
       // circleRadius: [3, Validators.required],
       squareSize: [2, Validators.required],
       // triangleBase: [2, Validators.required],
@@ -187,7 +189,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.editingShape = null; // new mode
     this.mapForm.reset({
       fenceName: null,
-      shapeMode: 'circle',
+      shapeMode: '',
       // circleRadius: 3,
       squareSize: 2,
       // triangleBase: 2,
@@ -218,11 +220,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.editingShape.isResizable = this.mapForm.value.isResize;
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
       } else {
-        // store new tool
         this.pendingTool = this.mapForm.value;
       }
       modal.close();
     } else {
+      console.log('not valid');
     }
   }
   ngAfterViewInit(): void {
@@ -536,41 +538,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.redraw();
     }
   }
-
-  copyGeofence(shape: Shape | null) {
-    console.log('shapec', shape);
-    if (!shape) return;
-
-    // Deep clone
-    const newShape: Shape = JSON.parse(JSON.stringify(shape));
-
-    // Ensure a new unique name (append "_copy")
-    newShape.name = (shape.name || 'Fence') + '_copy';
-
-    // Offset slightly so copy is visible (1 unit shift)
-    if (newShape.mode === 'free' && newShape.points) {
-      newShape.points = newShape.points.map((pt) => ({
-        x: pt.x + 1,
-        y: pt.y + 1,
-      }));
-    } else {
-      if (newShape.startX !== undefined) newShape.startX += 1;
-      if (newShape.startY !== undefined) newShape.startY += 1;
-      if (newShape.endX !== undefined) newShape.endX += 1;
-      if (newShape.endY !== undefined) newShape.endY += 1;
-    }
-
-    // Keep same flags
-    newShape.isDraggable = shape.isDraggable ?? true;
-    newShape.isResizable = shape.isResizable ?? true;
-    newShape.color = shape.color || '#ff0000';
-
-    // Save
-    this.polygons.push(newShape);
-    localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-
-    // Redraw
-    this.redraw();
+  copyGeofence() {
+    this.copyMode = true;
+    this.copiedShapeTemplate = null; // reset any previous copy
+    alert('Click on a shape to copy.');
   }
   finalizeShape() {
     if (!this.isDrawingShape || !this.currentPolygon.length) {
@@ -598,7 +569,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
     }
 
-    // Reset
     this.currentPolygon = [];
     this.shapeMode = null;
     this.isDrawingShape = false;
@@ -607,15 +577,77 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   @HostListener('mousedown', ['$event'])
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
-    // if (this.ignoreNextClickAfterEdit) {
-    //   this.ignoreNextClickAfterEdit = false;
-    //   return;
-    // }
     const { x, y } = this.getTransformedCoords(event);
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
+    if (this.copyMode) {
+      // Step 1: no template yet → select shape
+      if (!this.copiedShapeTemplate) {
+        for (let i = this.polygons.length - 1; i >= 0; i--) {
+          if (this.isPointInShape({ x, y }, this.polygons[i])) {
+            // deep clone template
+            this.copiedShapeTemplate = JSON.parse(
+              JSON.stringify(this.polygons[i])
+            );
+            alert('Now click on canvas to place the copy.');
+            return;
+          }
+        }
+      }
+      // Step 2: template exists → place copy
+      else {
+        const newShape: Shape = JSON.parse(
+          JSON.stringify(this.copiedShapeTemplate)
+        );
 
+        // offset/relocate so it appears at click position
+        const dx = x - newShape.startX!;
+        const dy = y - newShape.startY!;
+        if (newShape.mode === 'free' && newShape.points) {
+          newShape.points = newShape.points.map((p) => ({
+            x: p.x + dx,
+            y: p.y + dy,
+          }));
+        } else {
+          newShape.startX! += dx;
+          newShape.startY! += dy;
+          newShape.endX! += dx;
+          newShape.endY! += dy;
+        }
+
+        // --- ✅ Overlap check ---
+        if (this.doesShapeOverlap(newShape)) {
+          alert('Cannot place copy: it overlaps with an existing shape.');
+          this.copyMode = false;
+          this.copiedShapeTemplate = null;
+          return;
+        }
+        if (this.copiedShapeTemplate.name) {
+          const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, ''); // remove any existing number at end
+          let counter = 1;
+
+          // find next available number
+          while (
+            this.polygons.some((s) => s.name === `${baseName} ${counter}`)
+          ) {
+            counter++;
+          }
+          newShape.name = `${baseName} ${counter}`;
+        } else {
+          newShape.name = 'Shape 1';
+        }
+        // --- place shape ---
+        this.polygons.push(newShape);
+        // localStorage.setItem('')
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+
+        this.copyMode = false;
+        this.copiedShapeTemplate = null;
+        this.redraw();
+        return;
+      }
+    }
     if (event.button === 2) {
       this.isPanning = true;
       this.dragStart = {
@@ -720,7 +752,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           return;
         }
         this.draggingShape = this.hoveredShape;
-        console.log('dragging shape ', this.draggingShape);
         this.dragOffset = { x, y };
         if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
           this.originalPoints = this.draggingShape.points.map((p) => ({
@@ -839,24 +870,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.ctx.fillStyle = 'red';
       this.ctx.strokeStyle = 'black';
       const scaledHandleSize = this.handleSize;
-      if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
-        const center = this.toCanvasCoords(
-          this.hoveredShape.startX!,
-          this.hoveredShape.startY!
-        );
-        const edge = this.toCanvasCoords(
-          this.hoveredShape.endX!,
-          this.hoveredShape.endY!
-        );
-        const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
-
-        const handle = { x: center.x + radius, y: center.y };
-
-        this.ctx.beginPath();
-        this.ctx.arc(handle.x, handle.y, scaledHandleSize / 2, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-      } else if (this.hoveredShape.mode === 'square') {
+      if (this.hoveredShape.mode === 'square') {
         const corners = this.getShapeCorners(this.hoveredShape);
 
         for (let c of corners) {
@@ -1124,8 +1138,42 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (this.shapeMode === 'free') {
       return; // don't save free polygon here, handled by dblclick
     }
-    console.log('shapmode', this.shapeMode);
-    console.log('sdsd');
+    if (this.copiedShapeTemplate) {
+      const { x, y } = this.getTransformedCoords(event);
+
+      const placedShape: Shape = JSON.parse(
+        JSON.stringify(this.copiedShapeTemplate)
+      );
+
+      // Calculate offset (keep size same, move to clicked position)
+      const dx = x - placedShape.startX!;
+      const dy = y - placedShape.startY!;
+
+      if (placedShape.mode === 'free' && placedShape.points) {
+        placedShape.points = placedShape.points.map((pt) => ({
+          x: pt.x + dx,
+          y: pt.y + dy,
+        }));
+      } else {
+        placedShape.startX! += dx;
+        placedShape.startY! += dy;
+        placedShape.endX! += dx;
+        placedShape.endY! += dy;
+      }
+
+      // ✅ Check overlap
+      if (!this.doesShapeOverlap(placedShape)) {
+        this.polygons.push(placedShape);
+        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        this.redraw();
+      } else {
+        alert('Invalid copy: overlaps another fence!');
+      }
+
+      this.copiedShapeTemplate = null; // clear after placement
+      return;
+    }
+
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
     if (this.isEditing) {
@@ -1141,38 +1189,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const tool = this.pendingTool;
       let newShape: Shape | null = null;
 
-      if (tool.shapeMode === 'circle') {
-        newShape = {
-          mode: 'circle',
-          startX: x,
-          startY: y,
-          endX: x + tool.circleRadius,
-          endY: y,
-          radius: tool.circleRadius,
-          color: tool.color,
-          isDraggable: tool.isDrag,
-          isResizable: tool.isResize,
-          name: tool.fenceName,
-        };
-      } else if (tool.shapeMode === 'square') {
+      if (tool.shapeMode === 'square') {
         newShape = {
           mode: 'square',
           startX: x,
           startY: y,
           endX: x + tool.squareSize,
           endY: y + tool.squareSize,
-          color: tool.color,
-          isDraggable: tool.isDrag,
-          isResizable: tool.isResize,
-          name: tool.fenceName,
-        };
-      } else if (tool.shapeMode === 'triangle') {
-        newShape = {
-          mode: 'triangle',
-          startX: x,
-          startY: y,
-          endX: x + tool.triangleBase,
-          endY: y + tool.triangleHeight,
           color: tool.color,
           isDraggable: tool.isDrag,
           isResizable: tool.isResize,
@@ -1265,20 +1288,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     if (!this.isDrawingShape || !this.currentShape) return;
-    if (this.currentShape.mode === 'circle') {
-      const dx =
-        (this.currentShape.endX ?? this.currentShape.startX!) -
-        this.currentShape.startX!;
-      const dy =
-        (this.currentShape.endY ?? this.currentShape.startY!) -
-        this.currentShape.startY!;
-      this.currentShape.radius = Math.hypot(dx, dy);
-      if (!dx && !dy) {
-        this.currentShape.radius = this.circleRadius;
-        this.currentShape.endX = this.currentShape.startX! + this.circleRadius;
-        this.currentShape.endY = this.currentShape.startY!;
-      }
-    } else if (
+    if (
       this.currentShape.mode === 'square' &&
       this.currentShape.startX === this.currentShape.endX &&
       this.currentShape.startY === this.currentShape.endY
@@ -1562,6 +1572,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       fenceName: this.selectedFence.name || '',
       isDrag: this.selectedFence.isDraggable || false,
       isResize: this.selectedFence.isResizable || false,
+      color: this.selectedFence.color || '#ff0000',
     });
 
     const modalRef = this.modalService.open(this.geofenceToolModal, {
@@ -1570,10 +1581,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     modalRef.result
       .then(() => {
+
+        
         const fenceName = this.mapForm.controls['fenceName'].value;
         const isDrag = this.mapForm.controls['isDrag'].value;
         const isResize = this.mapForm.controls['isResize'].value;
         const color = this.mapForm.controls['color'].value;
+
         if (this.isDuplicateName(fenceName, this.selectedFence)) {
           return;
         }
@@ -1582,11 +1596,22 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.selectedFence!.isDraggable = isDrag;
         this.selectedFence!.isResizable = isResize;
         this.selectedFence!.color = color;
+        const idx = this.polygons.indexOf(this.selectedFence!);
+
+        if (this.doesShapeOverlap(this.selectedFence!, idx)) {
+          alert('Invalid edit: overlaps another shape!');
+          this.originalCoordinates(); // rollback
+          return;
+        }
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
         // this.carSocket.updateFences(this.polygons);
 
         this.resetEditState();
         this.ignoreNextClickAfterEdit = true;
+        this.shapeMode = null;
+        this.pendingTool = null;
+        this.isDrawingShape = false;
+        this.currentShape = null;
         this.redraw();
       })
       .catch(() => {
@@ -1598,7 +1623,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private resetEditState() {
     this.isEditing = false;
     this.selectedFence = null;
-    this.currentShape = null;
+    this.shapeMode = null;
     this.clickedNonDraggableShape = false;
     this.draggingShape = null;
     this.resizingShape = null;

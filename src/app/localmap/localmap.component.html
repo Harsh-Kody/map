@@ -22,7 +22,7 @@
       </button>
     </div>
     <!-- <div *ngIf="hoveredShape"> -->
-    <button (click)="copyGeofence(hoveredShape)">Copy</button>
+    <button (click)="copyGeofence()">Copy</button>
     <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
       Finalize Shape
     </button>
@@ -165,7 +165,7 @@
   >
     <div class="modal-header">
       <h5 class="modal-title">
-        {{ isEditing ? "Edit Fence" : "Create Fence" }}
+        {{ isEditing ? "Edit ffence" : "Create Fence" }}
       </h5>
       <button
         type="button"
@@ -276,7 +276,7 @@
       <button class="btn btn-secondary" (click)="modal.dismiss()">
         Cancel
       </button>
-      <button class="btn btn-primary">
+      <button class="btn btn-primary" type="submit">
         {{ isEditing ? "Save Changes" : "Create" }}
       </button>
     </div>
