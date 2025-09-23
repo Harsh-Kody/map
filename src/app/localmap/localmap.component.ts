@@ -368,7 +368,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     return { x: canvasX, y: canvasY };
   }
+  private normalizeSquare(shape: Shape) {
+    if (shape.mode !== 'square') return;
 
+    const minX = Math.min(shape.startX!, shape.endX!);
+    const maxX = Math.max(shape.startX!, shape.endX!);
+    const minY = Math.min(shape.startY!, shape.endY!);
+    const maxY = Math.max(shape.startY!, shape.endY!);
+
+    shape.startX = minX;
+    shape.startY = minY;
+    shape.endX = maxX;
+    shape.endY = maxY;
+  }
   @HostListener('mousemove', ['$event'])
   onMouseMove(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
@@ -423,25 +435,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         switch (this.activeHandleIndex) {
           case 0: // top-left
             proposedShape.startX = x;
-            proposedShape.startY = y;
+            proposedShape.startY = Math.min(y, this.resizingShape.endY! - 5); // keep gap
             proposedShape.endX = this.originalPoints[1].x;
             proposedShape.endY = this.originalPoints[1].y;
             break;
           case 1: // top-right
             proposedShape.endX = x;
-            proposedShape.startY = y;
+            proposedShape.startY = Math.min(y, this.resizingShape.endY! - 5);
             proposedShape.startX = this.originalPoints[0].x;
             proposedShape.endY = this.originalPoints[1].y;
             break;
           case 2: // bottom-right
             proposedShape.endX = x;
-            proposedShape.endY = y;
+            proposedShape.endY = Math.max(y, this.resizingShape.startY! + 5); // keep gap
             proposedShape.startX = this.originalPoints[0].x;
             proposedShape.startY = this.originalPoints[0].y;
             break;
           case 3: // bottom-left
             proposedShape.startX = x;
-            proposedShape.endY = y;
+            proposedShape.endY = Math.max(y, this.resizingShape.startY! + 5);
             proposedShape.endX = this.originalPoints[1].x;
             proposedShape.startY = this.originalPoints[0].y;
             break;
@@ -474,7 +486,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       //       proposedShape.endY = this.originalPoints[1].y;
       //       break;
       //   }
-      // }
+      // }ss
       else if (proposedShape.mode === 'free' && proposedShape.points) {
         proposedShape.points[this.activeHandleIndex] = { x, y };
       }
@@ -482,6 +494,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const idx = this.polygons.indexOf(this.resizingShape);
       if (!this.doesShapeOverlap(proposedShape, idx)) {
         Object.assign(this.resizingShape, proposedShape);
+        this.normalizeSquare(this.resizingShape);
       }
       this.redraw();
       return;
@@ -1234,6 +1247,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         return;
       }
       if (newShape) {
+        if (newShape.mode == 'square') {
+          this.normalizeSquare(newShape);
+        }
         // 🔴 Duplicate check
         if (this.isDuplicateName(newShape.name)) {
           return;
@@ -1295,7 +1311,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     if (this.draggingShape) {
-      console.log('dragging');
+      if (this.draggingShape?.mode === 'square') {
+        this.normalizeSquare(this.draggingShape);
+      }
       const idx = this.polygons.indexOf(this.draggingShape);
       if (this.doesShapeOverlap(this.draggingShape, idx)) {
         this.originalCoordinates();
