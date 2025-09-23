@@ -95,7 +95,23 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private shapeToCopy: Shape | null = null;
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
-  colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
+  colors = [
+    '#ff0000',
+    '#00ff00',
+    '#0000ff',
+    '#ffff00',
+    '#ff00ff',
+    '#000000',
+    '#008080',
+    '#FFFFFF',
+    '#f37934',
+    '#b8312f',
+    '#ffb7ce',
+    '#dfc5fe',
+    '#8b48d2',
+    '#257623ff',
+    '#c3c327ff',
+  ];
   copyMode: boolean = false;
   copiedShapeTemplate: Shape | null = null;
   // startAddGeofence() {
@@ -190,9 +206,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResize: [true],
     });
   }
+  private isImageFitted(): boolean {
+    return this.scale === this.fittedScale;
+  }
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
-    // Check if Delete key is pressed
     if (event.key === 'Delete' || event.key === 'Del') {
       this.deleteSelectedFence();
     }
@@ -225,7 +243,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       squareSize: 150,
       // triangleBase: 2,
       // triangleHeight: 1,
-      color: '#ff0000',
+      color: '#0000ff',
       isDrag: true,
       isResize: true,
     });
@@ -282,27 +300,36 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     };
     canvas.addEventListener('mousemove', (event) => {
       this.coord = this.getImageCoords(event);
-      // console.log('X', this.coord.x, 'Y', this.coord.y);
+      console.log('X', this.coord.x, 'Y', this.coord.y);
     });
     canvas.addEventListener('resize', () => {
       this.fitImageToCanvas();
       this.redraw();
     });
     canvas.addEventListener('mousedown', (event) => {
-      if (event.button === 2) {
-        // Right button
-        this.isPanning = true;
-        this.dragStart = {
-          x: event.clientX - this.offsetX,
-          y: event.clientY - this.offsetY,
-        };
-        canvas.style.cursor = 'grabbing';
+      if (event.button === 0) {
+        // Left click drag
+        console.log('image1', this.isImageFitted());
+        if (!this.isImageFitted()) {
+          // Only allow drag if zoomed in
+          this.isPanning = true;
+          this.dragStart = {
+            x: event.clientX - this.offsetX,
+            y: event.clientY - this.offsetY,
+          };
+          canvas.style.cursor = 'grabbing';
+        } else {
+          // If fitted, disable drag
+          this.isPanning = false;
+          canvas.style.cursor = 'default';
+        }
       }
     });
 
     // Mouse move → pan map if right button held
     window.addEventListener('mousemove', (event) => {
-      if (this.isPanning) {
+      console.log('image', this.isImageFitted());
+      if (this.isPanning && !this.isImageFitted()) {
         this.offsetX = event.clientX - this.dragStart.x;
         this.offsetY = event.clientY - this.dragStart.y;
         this.redraw();
@@ -325,6 +352,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // prevent context menu on right-click
   }
+
   private getImageCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
@@ -369,6 +397,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return { x: canvasX, y: canvasY };
   }
   private normalizeSquare(shape: Shape) {
+    // console.log('shape', shape);
     if (shape.mode !== 'square') return;
 
     const minX = Math.min(shape.startX!, shape.endX!);
@@ -387,6 +416,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const { x, y } = this.getTransformedCoords(event);
     const mouseCanvas = this.toCanvasCoords(x, y);
     let foundHover = false;
+    if (this.isPanning && !this.isImageFitted()) {
+      this.offsetX = event.clientX - this.dragStart.x;
+      this.offsetY = event.clientY - this.dragStart.y;
+      this.redraw();
+      return; // skip shape hover / dragging logic
+    }
+
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
         this.hoveredShape = this.polygons[i];
@@ -395,6 +431,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
     if (!foundHover) this.hoveredShape = null;
+
     this.redraw();
     if (this.isPanning) {
       this.offsetX = event.clientX - this.dragStart.x;
@@ -432,30 +469,63 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       //   proposedShape.endY = y;
       // } else
       if (proposedShape.mode === 'square') {
+        // Opposite corner (the one not being dragged)
+        let fixedX: number;
+        let fixedY: number;
+
         switch (this.activeHandleIndex) {
-          case 0: // top-left
-            proposedShape.startX = x;
-            proposedShape.startY = Math.min(y, this.resizingShape.endY! - 5); // keep gap
-            proposedShape.endX = this.originalPoints[1].x;
-            proposedShape.endY = this.originalPoints[1].y;
+          case 3: // top-left
+            fixedX = this.resizingShape.endX!;
+            fixedY = this.resizingShape.endY!;
             break;
-          case 1: // top-right
-            proposedShape.endX = x;
-            proposedShape.startY = Math.min(y, this.resizingShape.endY! - 5);
-            proposedShape.startX = this.originalPoints[0].x;
-            proposedShape.endY = this.originalPoints[1].y;
+          case 2: // top-right
+            fixedX = this.resizingShape.startX!;
+            fixedY = this.resizingShape.endY!;
             break;
-          case 2: // bottom-right
-            proposedShape.endX = x;
-            proposedShape.endY = Math.max(y, this.resizingShape.startY! + 5); // keep gap
-            proposedShape.startX = this.originalPoints[0].x;
-            proposedShape.startY = this.originalPoints[0].y;
+          case 1: // bottom-right
+            fixedX = this.resizingShape.startX!;
+            fixedY = this.resizingShape.startY!;
             break;
-          case 3: // bottom-left
-            proposedShape.startX = x;
-            proposedShape.endY = Math.max(y, this.resizingShape.startY! + 5);
-            proposedShape.endX = this.originalPoints[1].x;
-            proposedShape.startY = this.originalPoints[0].y;
+          case 0: // bottom-left
+            fixedX = this.resizingShape.endX!;
+            fixedY = this.resizingShape.startY!;
+            break;
+          default:
+            return;
+        }
+
+        // dx, dy relative to opposite corner
+        const dx = x - fixedX;
+        const dy = y - fixedY;
+
+        // enforce square by using max of dx/dy
+        const size = Math.max(Math.abs(dx), Math.abs(dy));
+
+        // assign new coords depending on handle
+        switch (this.activeHandleIndex) {
+          case 3: // top-left
+            proposedShape.startX = fixedX - size;
+            proposedShape.startY = fixedY - size;
+            proposedShape.endX = fixedX;
+            proposedShape.endY = fixedY;
+            break;
+          case 2: // top-right
+            proposedShape.startX = fixedX;
+            proposedShape.startY = fixedY - size;
+            proposedShape.endX = fixedX + size;
+            proposedShape.endY = fixedY;
+            break;
+          case 1: // bottom-right
+            proposedShape.startX = fixedX;
+            proposedShape.startY = fixedY;
+            proposedShape.endX = fixedX + size;
+            proposedShape.endY = fixedY + size;
+            break;
+          case 0: // bottom-left
+            proposedShape.startX = fixedX - size;
+            proposedShape.startY = fixedY;
+            proposedShape.endX = fixedX;
+            proposedShape.endY = fixedY + size;
             break;
         }
       }
@@ -591,10 +661,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResizable: this.mapForm.controls['isResize'].value,
       color: this.mapForm.controls['color'].value,
     };
-
+    console.log('overlap', this.doesShapeOverlap(newShape));
     if (!this.doesShapeOverlap(newShape)) {
+      console.log('callled ');
       this.polygons.push(newShape);
       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+    } else {
+      alert('shape is overlapped existing shape');
     }
     this.gridEnabled = false;
     this.currentPolygon = [];
@@ -606,6 +679,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
+    if (event.button !== 0) {
+      if (!this.isImageFitted()) {
+        this.isPanning = true;
+        this.dragStart = {
+          x: event.clientX - this.offsetX,
+          y: event.clientY - this.offsetY,
+        };
+        this.mapCanvas.nativeElement.style.cursor = 'grabbing';
+      } else {
+        this.isPanning = false;
+        this.mapCanvas.nativeElement.style.cursor = 'default';
+      }
+    }
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
@@ -868,7 +954,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.drawRobotPath();
 
     this.polygons.forEach((shape) => {
-      const strokeColor = shape.color || 'red';
+      const strokeColor = shape.color;
       const fillColor = shape.color
         ? this.hexToRgba(shape.color, 0.3)
         : 'rgba(255,0,0,0.3)';
@@ -877,6 +963,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     });
     if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
       if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
+        this.selectedColor = this.mapForm.get('color')?.value;
+
         const tempShape: Shape = {
           mode: 'free',
           points: this.currentPolygon,
@@ -1068,13 +1156,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.beginPath();
-
-    if (shape.mode === 'circle') {
-      const center = this.toCanvasCoords(shape.startX!, shape.startY!);
-      const edge = this.toCanvasCoords(shape.endX!, shape.endY!);
-      const r = Math.hypot(edge.x - center.x, edge.y - center.y);
-      this.ctx.arc(center.x, center.y, r, 0, 2 * Math.PI);
-    } else if (shape.mode === 'square') {
+    if (shape.mode === 'square') {
       const topLeft = this.toCanvasCoords(shape.startX!, shape.startY!);
       const bottomRight = this.toCanvasCoords(shape.endX!, shape.endY!);
       this.ctx.rect(
@@ -1116,20 +1198,21 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (!shape) return null;
     const tol = 10 * this.scale; // tolerance adjusted for zoom
 
-    if (shape.mode === 'circle' && shape.radius) {
-      const center = this.toCanvasCoords(shape.startX!, shape.startY!);
-      const edge = this.toCanvasCoords(shape.endX!, shape.endY!);
-      const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
+    // if (shape.mode === 'circle' && shape.radius) {
+    //   const center = this.toCanvasCoords(shape.startX!, shape.startY!);
+    //   const edge = this.toCanvasCoords(shape.endX!, shape.endY!);
+    //   const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
 
-      // Handle is on right side of circle
-      const handle = { x: center.x + radius, y: center.y };
+    //   // Handle is on right side of circle
+    //   const handle = { x: center.x + radius, y: center.y };
 
-      if (
-        Math.hypot(mouseCanvas.x - handle.x, mouseCanvas.y - handle.y) < tol
-      ) {
-        return { kind: 'ew', index: 0 };
-      }
-    } else if (shape.mode === 'square' || shape.mode === 'triangle') {
+    //   if (
+    //     Math.hypot(mouseCanvas.x - handle.x, mouseCanvas.y - handle.y) < tol
+    //   ) {
+    //     return { kind: 'ew', index: 0 };
+    //   }
+    // } else
+    if (shape.mode === 'square') {
       const corners = this.getShapeCorners(shape);
       for (let i = 0; i < corners.length; i++) {
         const cCanvas = this.toCanvasCoords(corners[i].x, corners[i].y); // ✅ FIX
@@ -1350,6 +1433,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.redraw();
     this.clickedNonDraggableShape = false;
   }
+
   private getStoredGeofences(): any[] {
     const stored = localStorage.getItem('geoFences');
     return stored ? JSON.parse(stored) : [];
@@ -1381,10 +1465,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     return inside;
   }
+
   @HostListener('dblclick', ['$event'])
   onDoubleClick(event: MouseEvent) {
     const { x, y } = this.getTransformedCoords(event);
-
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
         this.nameChange = true;
@@ -1546,31 +1630,34 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private shapeToPolygon(shape: Shape): { x: number; y: number }[] {
-    if (shape.mode === 'circle' && shape.radius) {
-      const points: { x: number; y: number }[] = [];
-      const steps = 24; // higher = smoother circle
-      for (let i = 0; i < steps; i++) {
-        const angle = (2 * Math.PI * i) / steps;
-        points.push({
-          x: shape.startX! + shape.radius * Math.cos(angle),
-          y: shape.startY! + shape.radius * Math.sin(angle),
-        });
-      }
-      return points;
-    } else if (shape.mode === 'square') {
+    // if (shape.mode === 'circle' && shape.radius) {
+    //   const points: { x: number; y: number }[] = [];
+    //   const steps = 24; // higher = smoother circle
+    //   for (let i = 0; i < steps; i++) {
+    //     const angle = (2 * Math.PI * i) / steps;
+    //     points.push({
+    //       x: shape.startX! + shape.radius * Math.cos(angle),
+    //       y: shape.startY! + shape.radius * Math.sin(angle),
+    //     });
+    //   }
+    //   return points;
+    // } else
+    if (shape.mode === 'square') {
       return [
         { x: shape.startX!, y: shape.startY! },
         { x: shape.endX!, y: shape.startY! },
         { x: shape.endX!, y: shape.endY! },
         { x: shape.startX!, y: shape.endY! },
       ];
-    } else if (shape.mode === 'triangle') {
-      return [
-        { x: shape.startX!, y: shape.startY! },
-        { x: shape.endX!, y: shape.startY! },
-        { x: (shape.startX! + shape.endX!) / 2, y: shape.endY! },
-      ];
-    } else if (shape.mode === 'free' && shape.points) {
+    }
+    //  else if (shape.mode === 'triangle') {
+    //   return [
+    //     { x: shape.startX!, y: shape.startY! },
+    //     { x: shape.endX!, y: shape.startY! },
+    //     { x: (shape.startX! + shape.endX!) / 2, y: shape.endY! },
+    //   ];
+    // }
+    else if (shape.mode === 'free' && shape.points) {
       return shape.points;
     }
     return [];
@@ -1852,9 +1939,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const ctx = this.ctx!;
     const dpr = window.devicePixelRatio || 1;
+    console.log('window', window.innerWidth);
     const maxWidth = window.innerWidth * 0.9;
     const maxHeight = window.innerHeight * 0.9;
-
+    console.log('max width', maxWidth);
     this.fittedScale = Math.min(
       maxWidth / img.naturalWidth,
       maxHeight / img.naturalHeight,
@@ -1864,11 +1952,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     const cssWidth = img.naturalWidth * this.scale;
     const cssHeight = img.naturalHeight * this.scale;
-
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
+    console.log('canvas width', canvas.width);
+    console.log('canvas height', canvas.height);
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
+    console.log('canvas width fit', canvas.style.width);
 
     // center image
     this.offsetX = (canvas.clientWidth - cssWidth) / 2;
