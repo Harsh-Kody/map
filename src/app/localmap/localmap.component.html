@@ -12,14 +12,23 @@
       {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
     </button>
     <button (click)="togglePath()">Toggle Path</button>
+    <div *ngIf="shapeMode === 'free' && isDrawingShape">
+      <!-- <button (click)="completeFreeGeofence()">Complete Free Geofence</button> -->
+      <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">
+        Undo
+      </button>
+    </div>
+    <!-- <div *ngIf="hoveredShape"> -->
+    <button (click)="copyGeofence()">Copy</button>
+    <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
+      Finalize Shape
+    </button>
     <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
     <div *ngIf="shapeMode === 'free' && isDrawingShape">
       <button (click)="completeFreeGeofence()">Complete Free Geofence</button>
       <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">Undo</button>
     </div>
-    <!-- <div *ngIf="hoveredShape"> -->
-    <button (click)="copyGeofence(hoveredShape)">Copy</button>
-    <!-- </div> -->
+
   </div>
 
   <div class="fence-log">
@@ -39,10 +48,13 @@
       <div *ngSwitchCase="'square'">
         <label>Side length: <input type="number" [(ngModel)]="squareSize" /></label>
       </div>
-      <div *ngSwitchCase="'triangle'">
-        <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label><br />
-        <label>Height: <input type="number" [(ngModel)]="triangleHeight" /></label>
-      </div>
+      <!-- <div *ngSwitchCase="'triangle'">
+        <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
+        ><br />
+        <label
+          >Height: <input type="number" [(ngModel)]="triangleHeight"
+        /></label>
+      </div> -->
     </ng-container>
   </div>
 </div>
@@ -58,7 +70,7 @@
     </div>
   </div>
   <ng-template #noRobot>
-    <p>No robots online.</p>
+    <p>No robots onlines.</p>
   </ng-template>
   <div class="meta-data" *ngIf="metaData.DistanceTravelled !== undefined">
     <!-- <h3>Meta </h3> -->
@@ -164,46 +176,25 @@
       </div>
 
       <!-- Select Shape -->
+      @if (!isEditing) {
+
       <div class="mb-3">
         <label>Select Shape</label>
         <select class="form-select" formControlName="shapeMode">
-          <option value="circle">Circle</option>
+          <!-- <option value="circle">Circle</option> -->
           <option value="square">Square</option>
-          <option value="triangle">Triangle</option>
+          <!-- <option value="triangle">Triangle</option> -->
           <option value="free">Free</option>
         </select>
       </div>
+      }
 
-      <!-- Shape Size -->
-      <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'circle'">
-        <label>Radius</label>
-        <input type="number" class="form-control" formControlName="circleRadius" />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('circleRadius','required')) {
-        <div class="text-danger">Size is required</div>
-        }}
-      </div>
 
       <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'square'">
         <label>Side Length</label>
         <input type="number" class="form-control" formControlName="squareSize" />
         @if (mapFormDirective.submitted) { @if
         (hasError('squareSize','required')) {
-        <div class="text-danger">Size is required</div>
-        }}
-      </div>
-
-      <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'triangle'">
-        <label>Base</label>
-        <input type="number" class="form-control" formControlName="triangleBase" />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('triangleBase','required')) {
-        <div class="text-danger">Size is required</div>
-        }}
-        <label>Height</label>
-        <input type="number" class="form-control" formControlName="triangleHeight" />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('triangleHeight','required')) {
         <div class="text-danger">Size is required</div>
         }}
       </div>
@@ -232,7 +223,7 @@
       <button class="btn btn-secondary" (click)="modal.dismiss()">
         Cancel
       </button>
-      <button class="btn btn-primary">
+      <button class="btn btn-primary" type="submit">
         {{ isEditing ? "Save Changes" : "Create" }}
       </button>
     </div>

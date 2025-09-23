@@ -7,7 +7,7 @@ import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
   styleUrl: './fence-modal.component.scss',
 })
 export class FenceModalComponent {
-  @Input() fenceData: any = { name: '', isDraggable: false, isResizable: false }; // ✅ default
+  @Input() fenceData: any = { name: '', isDraggable: false, isResizable: false }; 
 
   constructor(public activeModal: NgbActiveModal) {}
 

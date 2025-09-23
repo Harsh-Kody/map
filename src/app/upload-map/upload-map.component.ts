@@ -22,13 +22,10 @@ export class UploadMapComponent {
 
   onFileSelected(event: any) {
     const file = event.target.files[0];
-    console.log("file",file);
     if (!file) return;
     // event.target.value = null;
     const img = new Image();
-    console.log("img",img);
     const objectURL = URL.createObjectURL(file);
-    console.log("obj",objectURL);
     img.onload = () => {
       // if (img.width < 2000 || img.height < 2000) {
       //   this.errorMessage = 'Image must be at least 2000 x 2000 pixels!';
@@ -66,8 +63,6 @@ export class UploadMapComponent {
     }
 
     const response = await fetch(this.croppedImage);
-    console.log("base64" , this.croppedImage);
-    console.log("res",response);
     const blob = await response.blob();
     const file = new File([blob], 'mapImage' + '.' + blob.type.split('/')[1], {
       type: blob.type,
@@ -90,7 +85,7 @@ export class UploadMapComponent {
         this.router.navigate(['/localmap']);
         return;
       }
-      
+
       localStorage.removeItem('geoFences');
       localStorage.setItem('mapHash', newHash);
 
