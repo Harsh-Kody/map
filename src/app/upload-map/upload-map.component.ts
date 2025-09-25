@@ -27,13 +27,13 @@ export class UploadMapComponent {
     const img = new Image();
     const objectURL = URL.createObjectURL(file);
     img.onload = () => {
+      console.log('width', img.width);
       // if (img.width < 2000 || img.height < 2000) {
       //   this.errorMessage = 'Image must be at least 2000 x 2000 pixels!';
       //   this.showCropper = false;
       //   URL.revokeObjectURL(objectURL);
       //   return;
       // }
-
       this.errorMessage = '';
       this.showCropper = true;
       this.imageChangedEvent = event;
