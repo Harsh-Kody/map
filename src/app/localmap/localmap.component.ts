@@ -206,9 +206,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResize: [true],
     });
   }
-  private isImageFitted(): boolean {
-    return this.scale === this.fittedScale;
-  }
+  // private isImageFitted(): boolean {
+  //   return this.scale === this.fittedScale;
+  // }
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Delete' || event.key === 'Del') {
@@ -299,8 +299,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.redraw();
     };
     canvas.addEventListener('mousemove', (event) => {
+      this.clampOffsets();
       this.coord = this.getImageCoords(event);
-      console.log('X', this.coord.x, 'Y', this.coord.y);
     });
     canvas.addEventListener('resize', () => {
       this.fitImageToCanvas();
@@ -309,32 +309,31 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     canvas.addEventListener('mousedown', (event) => {
       if (event.button === 0) {
         // Left click drag
-        console.log('image1', this.isImageFitted());
-        if (!this.isImageFitted()) {
-          // Only allow drag if zoomed in
-          this.isPanning = true;
-          this.dragStart = {
-            x: event.clientX - this.offsetX,
-            y: event.clientY - this.offsetY,
-          };
-          canvas.style.cursor = 'grabbing';
-        } else {
-          // If fitted, disable drag
-          this.isPanning = false;
-          canvas.style.cursor = 'default';
-        }
+        // this.clampOffsets();
+        // if (!this.isImageFitted()) {
+        //   // Only allow drag if zoomed in
+        //   this.isPanning = true;
+        //   this.dragStart = {
+        //     x: event.clientX - this.offsetX,
+        //     y: event.clientY - this.offsetY,
+        //   };
+        //   canvas.style.cursor = 'grabbing';
+        // } else {
+        //   // If fitted, disable drag
+        //   this.isPanning = false;
+        //   canvas.style.cursor = 'default';
+        // }
       }
     });
 
     // Mouse move → pan map if right button held
-    window.addEventListener('mousemove', (event) => {
-      console.log('image', this.isImageFitted());
-      if (this.isPanning && !this.isImageFitted()) {
-        this.offsetX = event.clientX - this.dragStart.x;
-        this.offsetY = event.clientY - this.dragStart.y;
-        this.redraw();
-      }
-    });
+    // window.addEventListener('mousemove', (event) => {
+    //   if (this.isPanning && !this.isImageFitted()) {
+    //     this.offsetX = event.clientX - this.dragStart.x;
+    //     this.offsetY = event.clientY - this.dragStart.y;
+    //     this.redraw();
+    //   }
+    // });
 
     window.addEventListener('mouseup', (event) => {
       if (event.button === 2 && this.isPanning) {
@@ -352,7 +351,29 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // prevent context menu on right-click
   }
+  private clampOffsets() {
+    const img: HTMLImageElement = this.mapImage.nativeElement;
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
 
+    const scaledWidth = img.naturalWidth * this.scale;
+    const scaledHeight = img.naturalHeight * this.scale;
+    // image must cover canvas → clamp offset
+    const minX = canvas.clientWidth - scaledWidth;
+    const minY = canvas.clientHeight - scaledHeight;
+
+    // If image smaller than canvas, center it
+    if (scaledWidth <= canvas.clientWidth) {
+      this.offsetX = (canvas.clientWidth - scaledWidth) / 2;
+    } else {
+      this.offsetX = Math.min(0, Math.max(this.offsetX, minX));
+    }
+
+    if (scaledHeight <= canvas.clientHeight) {
+      this.offsetY = (canvas.clientHeight - scaledHeight) / 2;
+    } else {
+      this.offsetY = Math.min(0, Math.max(this.offsetY, minY));
+    }
+  }
   private getImageCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
@@ -404,7 +425,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const maxX = Math.max(shape.startX!, shape.endX!);
     const minY = Math.min(shape.startY!, shape.endY!);
     const maxY = Math.max(shape.startY!, shape.endY!);
-
     shape.startX = minX;
     shape.startY = minY;
     shape.endX = maxX;
@@ -414,14 +434,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseMove(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
+
     const mouseCanvas = this.toCanvasCoords(x, y);
     let foundHover = false;
-    if (this.isPanning && !this.isImageFitted()) {
-      this.offsetX = event.clientX - this.dragStart.x;
-      this.offsetY = event.clientY - this.dragStart.y;
-      this.redraw();
-      return; // skip shape hover / dragging logic
-    }
 
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
@@ -615,6 +630,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.currentShape.endY = y;
       this.redraw();
     }
+
+    // if (this.isPanning && !this.isImageFitted()) {
+    //   this.offsetX = event.clientX - this.dragStart.x;
+    //   this.offsetY = event.clientY - this.dragStart.y;
+    //   // this.clampOffsets();
+    //   this.redraw();
+    //   return; // skip shape hover / dragging logic
+    // }
   }
   // completeFreeGeofence() {
   //   if (this.currentPolygon.length >= 3) {
@@ -661,7 +684,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResizable: this.mapForm.controls['isResize'].value,
       color: this.mapForm.controls['color'].value,
     };
-    console.log('overlap', this.doesShapeOverlap(newShape));
     if (!this.doesShapeOverlap(newShape)) {
       console.log('callled ');
       this.polygons.push(newShape);
@@ -679,18 +701,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
-    if (event.button !== 0) {
-      if (!this.isImageFitted()) {
-        this.isPanning = true;
-        this.dragStart = {
-          x: event.clientX - this.offsetX,
-          y: event.clientY - this.offsetY,
-        };
-        this.mapCanvas.nativeElement.style.cursor = 'grabbing';
-      } else {
-        this.isPanning = false;
-        this.mapCanvas.nativeElement.style.cursor = 'default';
-      }
+    if (event.button === 0) {
+      // if (!this.isImageFitted()) {
+      //   this.isPanning = true;
+      //   this.dragStart = {
+      //     x: event.clientX - this.offsetX,
+      //     y: event.clientY - this.offsetY,
+      //   };
+      //   this.mapCanvas.nativeElement.style.cursor = 'grabbing';
+      // } else {
+      //   this.isPanning = false;
+      //   this.mapCanvas.nativeElement.style.cursor = 'default';
+      // }
     }
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
@@ -703,11 +725,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
     if (this.copyMode) {
-      // Step 1: no template yet → select shape
       if (!this.copiedShapeTemplate) {
+        // Step 1: select a shape to copy
         for (let i = this.polygons.length - 1; i >= 0; i--) {
           if (this.isPointInShape({ x, y }, this.polygons[i])) {
-            // deep clone template
             this.copiedShapeTemplate = JSON.parse(
               JSON.stringify(this.polygons[i])
             );
@@ -715,39 +736,36 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             return;
           }
         }
-      }
-      // Step 2: template exists → place copy
-      else {
+      } else {
+        // Step 2: place copy
         const newShape: Shape = JSON.parse(
           JSON.stringify(this.copiedShapeTemplate)
         );
 
-        // offset/relocate so it appears at click position
-        const dx = x - newShape.startX!;
-        const dy = y - newShape.startY!;
         if (newShape.mode === 'free' && newShape.points) {
+          // Use first point as reference
+          const firstPoint = newShape.points[0];
+          const dx = x - firstPoint.x;
+          const dy = y - firstPoint.y;
+
           newShape.points = newShape.points.map((p) => ({
             x: p.x + dx,
             y: p.y + dy,
           }));
         } else {
+          // Default (square, circle, etc.)
+          const dx = x - newShape.startX!;
+          const dy = y - newShape.startY!;
           newShape.startX! += dx;
           newShape.startY! += dy;
           newShape.endX! += dx;
           newShape.endY! += dy;
         }
 
-        // --- ✅ Overlap check ---
-        if (this.doesShapeOverlap(newShape)) {
-          alert('Cannot place copy: it overlaps with an existing shape.');
-          this.copyMode = false;
-          this.copiedShapeTemplate = null;
-          return;
-        }
+        // ✅ Give unique name
         if (this.copiedShapeTemplate.name) {
-          const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, ''); // remove any existing number at end
+          const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, '');
           let counter = 1;
-
           while (
             this.polygons.some((s) => s.name === `${baseName} ${counter}`)
           ) {
@@ -757,14 +775,22 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         } else {
           newShape.name = 'Shape 1';
         }
-        // --- place shape ---
+
+        // ✅ Prevent overlap
+        if (this.doesShapeOverlap(newShape)) {
+          alert('Cannot place copy: it overlaps with an existing shape.');
+          this.copyMode = false;
+          this.copiedShapeTemplate = null;
+          return;
+        }
+
+        // ✅ Save
         this.polygons.push(newShape);
-        // localStorage.setItem('')
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+
         this.copyMode = false;
         this.copiedShapeTemplate = null;
         this.redraw();
-        return;
       }
     }
     if (event.button === 2) {
@@ -1939,10 +1965,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const ctx = this.ctx!;
     const dpr = window.devicePixelRatio || 1;
-    console.log('window', window.innerWidth);
     const maxWidth = window.innerWidth * 0.9;
     const maxHeight = window.innerHeight * 0.9;
-    console.log('max width', maxWidth);
     this.fittedScale = Math.min(
       maxWidth / img.naturalWidth,
       maxHeight / img.naturalHeight,
@@ -1954,12 +1978,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const cssHeight = img.naturalHeight * this.scale;
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
-    console.log('canvas width', canvas.width);
-    console.log('canvas height', canvas.height);
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
-    console.log('canvas width fit', canvas.style.width);
-
     // center image
     this.offsetX = (canvas.clientWidth - cssWidth) / 2;
     this.offsetY = (canvas.clientHeight - cssHeight) / 2;
@@ -2182,8 +2202,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     // adjust offsets so that image center stays fixed
     this.offsetX = cx - imgX * newScale;
     this.offsetY = cy - imgY * newScale;
-
+    console.log('new scale', newScale);
     this.scale = newScale;
+    // this.clampOffsets();
     this.redraw();
   }
   onSubmit(modal: any) {
