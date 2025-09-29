@@ -88,6 +88,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private originalOffsetX = 0;
   private originalOffsetY = 0;
   private originalScale = 1;
+  lastDirX: number | null = null;
+  lastDirY: number | null = null;
+  minSquareBounds: {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null = null;
   constructor(
     private localMapService: LocalmapService,
     private mapStorage: MapStorageService,
@@ -392,13 +400,28 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapCanvas.nativeElement.style.cursor = 'default';
     }
   }
+  // @HostListener('document:mouseup', ['$event'])
+  // onMouseUp(event: MouseEvent) {
+  //   // Stop resizing or dragging if mouse is released anywhere
+  //   this.draggingShape = null;
+  //   this.resizingShape = null;
+  //   this.activeHandleIndex = null;
+  //   this.originalPoints = [];
+  //   this.isPanning = false;
+
+  //   this.mapCanvas.nativeElement.style.cursor = 'default';
+  // }
   @HostListener('window:mouseup', ['$event'])
   onWindowMouseUp(event: MouseEvent) {
     if (this.isPanning) {
       this.resetView();
-      this.isPanning = false;
-      this.mapCanvas.nativeElement.style.cursor = 'default';
     }
+    this.draggingShape = null;
+    this.resizingShape = null;
+    this.activeHandleIndex = null;
+    this.originalPoints = [];
+    this.isPanning = false;
+    this.mapCanvas.nativeElement.style.cursor = 'default';
   }
   private clampOffsets() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
@@ -424,7 +447,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
   }
   resetView() {
-    console.log('reset');
     this.fitImageToCanvas();
     this.offsetX = this.originalOffsetX;
     this.offsetY = this.originalOffsetY;
@@ -446,14 +468,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
     if (!foundHover) this.hoveredShape = null;
-
     this.redraw();
     if (this.isPanning) {
       this.offsetX = event.clientX - this.dragStart.x;
       this.offsetY = event.clientY - this.dragStart.y;
       if (this.isImageOutsideCanvas()) {
-        console.log('called');
-        this.resetView(); // 👈 reset map if dragged out
+        this.resetView();
         return;
       }
       this.redraw();
@@ -480,7 +500,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const proposedShape: Shape = JSON.parse(
         JSON.stringify(this.resizingShape)
       );
-
       // if (proposedShape.mode === 'circle') {
       //   const dx = x - proposedShape.startX!;
       //   const dy = y - proposedShape.startY!;
@@ -488,67 +507,55 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       //   proposedShape.endX = x;
       //   proposedShape.endY = y;
       // } else
-      if (proposedShape.mode === 'square') {
-        // Opposite corner (the one not being dragged)
-        let fixedX: number;
-        let fixedY: number;
+      if (proposedShape.mode === 'square' && this.activeHandleIndex !== null) {
+        const minSize = 20 / Math.max(this.scale, 0.001);
 
         switch (this.activeHandleIndex) {
-          case 3: // top-left
-            fixedX = this.resizingShape.endX!;
-            fixedY = this.resizingShape.endY!;
+          case 0: // top-left
+            proposedShape.startX = Math.min(x, proposedShape.endX! - minSize);
+            proposedShape.startY = Math.min(y, proposedShape.endY! - minSize);
             break;
-          case 2: // top-right
-            fixedX = this.resizingShape.startX!;
-            fixedY = this.resizingShape.endY!;
+
+          case 1: // top-right
+            proposedShape.endX = Math.max(x, proposedShape.startX! + minSize);
+            proposedShape.startY = Math.min(y, proposedShape.endY! - minSize);
             break;
-          case 1: // bottom-right
-            fixedX = this.resizingShape.startX!;
-            fixedY = this.resizingShape.startY!;
+
+          case 2: // bottom-right
+            proposedShape.endX = Math.max(x, proposedShape.startX! + minSize);
+            proposedShape.endY = Math.max(y, proposedShape.startY! + minSize);
             break;
-          case 0: // bottom-left
-            fixedX = this.resizingShape.endX!;
-            fixedY = this.resizingShape.startY!;
+
+          case 3: // bottom-left
+            proposedShape.startX = Math.min(x, proposedShape.endX! - minSize);
+            proposedShape.endY = Math.max(y, proposedShape.startY! + minSize);
             break;
-          default:
-            return;
         }
 
-        // dx, dy relative to opposite corner
-        const dx = x - fixedX;
-        const dy = y - fixedY;
+        // force square aspect ratio
+        const width = proposedShape.endX! - proposedShape.startX!;
+        const height = proposedShape.endY! - proposedShape.startY!;
+        const size = Math.max(Math.abs(width), Math.abs(height));
 
-        // enforce square by using max of dx/dy
-        const size = Math.max(Math.abs(dx), Math.abs(dy));
-
-        // assign new coords depending on handle
-        switch (this.activeHandleIndex) {
-          case 3: // top-left
-            proposedShape.startX = fixedX - size;
-            proposedShape.startY = fixedY - size;
-            proposedShape.endX = fixedX;
-            proposedShape.endY = fixedY;
-            break;
-          case 2: // top-right
-            proposedShape.startX = fixedX;
-            proposedShape.startY = fixedY - size;
-            proposedShape.endX = fixedX + size;
-            proposedShape.endY = fixedY;
-            break;
-          case 1: // bottom-right
-            proposedShape.startX = fixedX;
-            proposedShape.startY = fixedY;
-            proposedShape.endX = fixedX + size;
-            proposedShape.endY = fixedY + size;
-            break;
-          case 0: // bottom-left
-            proposedShape.startX = fixedX - size;
-            proposedShape.startY = fixedY;
-            proposedShape.endX = fixedX;
-            proposedShape.endY = fixedY + size;
-            break;
+        if (this.activeHandleIndex === 0) {
+          // top-left
+          proposedShape.startX = proposedShape.endX! - size;
+          proposedShape.startY = proposedShape.endY! - size;
+        } else if (this.activeHandleIndex === 1) {
+          // top-right
+          proposedShape.endX = proposedShape.startX! + size;
+          proposedShape.startY = proposedShape.endY! - size;
+        } else if (this.activeHandleIndex === 2) {
+          // bottom-right
+          proposedShape.endX = proposedShape.startX! + size;
+          proposedShape.endY = proposedShape.startY! + size;
+        } else if (this.activeHandleIndex === 3) {
+          // bottom-left
+          proposedShape.startX = proposedShape.endX! - size;
+          proposedShape.endY = proposedShape.startY! + size;
         }
       }
+
       //  else if (proposedShape.mode === 'triangle') {
       //   switch (this.activeHandleIndex) {
       //     case 0: // bottom-left
@@ -576,7 +583,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       //       proposedShape.endY = this.originalPoints[1].y;
       //       break;
       //   }
-      // }ss
+      // }
       else if (proposedShape.mode === 'free' && proposedShape.points) {
         proposedShape.points[this.activeHandleIndex] = { x, y };
       }
@@ -644,6 +651,65 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     //   return; // skip shape hover / dragging logic
     // }
   }
+  private clampSquareSize(
+    shape: Shape,
+    fixed: { x: number; y: number },
+    moving: { x: number; y: number }
+  ) {
+    const MIN_SIZE = 20 / Math.max(this.scale, 0.001);
+
+    // Delta from fixed to mouse
+    const dx = moving.x - fixed.x;
+    const dy = moving.y - fixed.y;
+
+    // Square size is max of abs(dx/dy)
+    let size = Math.max(Math.abs(dx), Math.abs(dy));
+    if (size < MIN_SIZE) size = MIN_SIZE;
+
+    // Decide directions (preserve quadrant)
+    const dirX = dx >= 0 ? 1 : -1;
+    const dirY = dy >= 0 ? 1 : -1;
+
+    // New moving corner
+    const moveX = fixed.x + dirX * size;
+    const moveY = fixed.y + dirY * size;
+
+    // Now assign without re-normalizing
+    if (fixed.x <= moveX) {
+      shape.startX = fixed.x;
+      shape.endX = moveX;
+    } else {
+      shape.startX = moveX;
+      shape.endX = fixed.x;
+    }
+
+    if (fixed.y <= moveY) {
+      shape.startY = fixed.y;
+      shape.endY = moveY;
+    } else {
+      shape.startY = moveY;
+      shape.endY = fixed.y;
+    }
+  }
+
+  private getShapeCorners(shape: Shape): { x: number; y: number }[] {
+    if (shape.mode === 'square') {
+      const x1 = Math.min(shape.startX!, shape.endX!);
+      const y1 = Math.min(shape.startY!, shape.endY!);
+      const x2 = Math.max(shape.startX!, shape.endX!);
+      const y2 = Math.max(shape.startY!, shape.endY!);
+
+      return [
+        { x: x1, y: y1 }, // top-left
+        { x: x2, y: y1 }, // top-right
+        { x: x2, y: y2 }, // bottom-right
+        { x: x1, y: y2 }, // bottom-left
+      ];
+    }
+
+    return [];
+  }
+
   private getImageCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
@@ -665,16 +731,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private getTransformedCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
-
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
-
     let imgX = (canvasX - this.offsetX) / this.scale;
     let imgY = (canvasY - this.offsetY) / this.scale;
-
     // reverse Y axis
     imgY = this.mapImage.nativeElement.naturalHeight - imgY;
-
     return { x: imgX, y: imgY };
   }
 
@@ -684,11 +746,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const canvasY =
       (this.mapImage.nativeElement.naturalHeight - imgY) * this.scale +
       this.offsetY;
-
     return { x: canvasX, y: canvasY };
   }
   private normalizeSquare(shape: Shape) {
-    // console.log('shape', shape);
     if (shape.mode !== 'square') return;
     const minX = Math.min(shape.startX!, shape.endX!);
     const maxX = Math.max(shape.startX!, shape.endX!);
@@ -930,31 +990,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (this.hoveredShape) {
       // check handle for circle resize
       if (this.hoveredShape.isResizable) {
-        if (this.hoveredShape.mode === 'circle' && this.hoveredShape.radius) {
-          const center = this.toCanvasCoords(
-            this.hoveredShape.startX!,
-            this.hoveredShape.startY!
-          );
-          const edge = this.toCanvasCoords(
-            this.hoveredShape.endX!,
-            this.hoveredShape.endY!
-          );
-          const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
-          const handle = { x: center.x + radius, y: center.y };
-          const mouseCanvas = this.toCanvasCoords(x, y);
-          if (
-            Math.hypot(mouseCanvas.x - handle.x, mouseCanvas.y - handle.y) <
-            this.HANDLE_TOLERANCE
-          ) {
-            this.resizingShape = this.hoveredShape;
-            this.activeHandleIndex = 0;
-            this.originalPoints = [
-              { x: this.hoveredShape.startX!, y: this.hoveredShape.startY! },
-              { x: this.hoveredShape.endX!, y: this.hoveredShape.endY! },
-            ];
-            return;
-          }
-        } else if (this.hoveredShape.mode === 'square') {
+        if (this.hoveredShape.mode === 'square') {
           const cornersWorld = this.getShapeCorners(this.hoveredShape);
           const mouseCanvas = this.toCanvasCoords(x, y);
           for (let i = 0; i < cornersWorld.length; i++) {
@@ -1066,30 +1102,57 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // fallback: nothing to do
   }
+  private worldToCanvas(wx: number, wy: number): { x: number; y: number } {
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
+    const rect = canvas.getBoundingClientRect();
+
+    // ratio between device pixels and CSS pixels
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    // world → CSS px → device px
+    const cx = (wx * this.scale + this.offsetX) * scaleX;
+    const cy = (wy * this.scale + this.offsetY) * scaleY;
+
+    return { x: cx, y: cy };
+  }
+
   private isShapeInsideCanvas(shape: Shape): boolean {
-    const canvas = this.mapCanvas.nativeElement;
+    const img = this.mapImage.nativeElement;
+
+    const imgWidth = img.naturalWidth;
+    const imgHeight = img.naturalHeight;
+
+    const withinBounds = (
+      minX: number,
+      maxX: number,
+      minY: number,
+      maxY: number
+    ) => {
+      if (minX < 0) return false;
+      if (minY < 0) return false;
+      if (maxX > imgWidth) return false;
+      if (maxY > imgHeight) return false;
+      return true;
+    };
 
     if (shape.mode === 'square') {
-      const minX = Math.min(shape.startX!, shape.endX!);
-      const maxX = Math.max(shape.startX!, shape.endX!);
-      const minY = Math.min(shape.startY!, shape.endY!);
-      const maxY = Math.max(shape.startY!, shape.endY!);
+      const cornersWorld = this.getShapeCorners(shape); // already in world coords!
+      const minX = Math.min(...cornersWorld.map((c) => c.x));
+      const maxX = Math.max(...cornersWorld.map((c) => c.x));
+      const minY = Math.min(...cornersWorld.map((c) => c.y));
+      const maxY = Math.max(...cornersWorld.map((c) => c.y));
 
-      // ❌ Outside check
-      if (minX < 0 || maxX > canvas.width || minY < 0 || maxY > canvas.height) {
-        return false;
-      }
-      return true;
+      return withinBounds(minX, maxX, minY, maxY);
     }
 
     if (shape.mode === 'free' && shape.points) {
-      return shape.points.every(
-        (pt) =>
-          pt.x >= 0 &&
-          pt.x <= canvas.width &&
-          pt.y >= 0 &&
-          pt.y <= canvas.height
-      );
+      const minX = Math.min(...shape.points.map((p) => p.x));
+      const maxX = Math.max(...shape.points.map((p) => p.x));
+      const minY = Math.min(...shape.points.map((p) => p.y));
+      const maxY = Math.max(...shape.points.map((p) => p.y));
+
+      return withinBounds(minX, maxX, minY, maxY);
     }
 
     return true;
@@ -2002,30 +2065,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.redraw();
   }
 
-  private getShapeCorners(shape: Shape): { x: number; y: number }[] {
-    if (shape.mode === 'square') {
-      const x1 = Math.min(shape.startX!, shape.endX!);
-      const y1 = Math.min(shape.startY!, shape.endY!);
-      const x2 = Math.max(shape.startX!, shape.endX!);
-      const y2 = Math.max(shape.startY!, shape.endY!);
-
-      return [
-        { x: x1, y: y1 }, // top-left
-        { x: x2, y: y1 }, // top-right
-        { x: x2, y: y2 }, // bottom-right
-        { x: x1, y: y2 }, // bottom-left
-      ];
-    } else if (shape.mode === 'triangle') {
-      // use explicit vertices
-      return [
-        { x: shape.startX!, y: shape.startY! }, // bottom-left
-        { x: shape.endX!, y: shape.endY! }, // bottom-right
-        { x: shape.topX!, y: shape.topY! }, // top
-      ];
-    }
-    return [];
-  }
-
   private drawShapeLabel(shape: Shape) {
     let x = 0,
       y = 0;
@@ -2317,7 +2356,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   zoomIn() {
     this.zoomAtImageCenter(1.2);
   }
-
   zoomOut() {
     this.zoomAtImageCenter(1 / 1.2);
   }
@@ -2344,6 +2382,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.scale = newScale;
     // this.clampOffsets();
     this.redraw();
+  }
+  private getImageBoundsCanvas(): {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } {
+    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
+
+    const img = this.mapImage.nativeElement;
+    const imgWidth = img.naturalWidth * this.scale;
+    const imgHeight = img.naturalHeight * this.scale;
+
+    const minX = this.offsetX;
+    const minY = this.offsetY;
+    const maxX = this.offsetX + imgWidth;
+    const maxY = this.offsetY + imgHeight;
+
+    return { minX, maxX, minY, maxY };
   }
   onSubmit(modal: any) {
     if (this.mapForm.valid && !this.isDuplicate) {
