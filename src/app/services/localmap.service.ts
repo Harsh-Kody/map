@@ -11,6 +11,7 @@ export class LocalmapService {
   private locationSubject = new Subject<RobotLocation>();
   private metaDataSubject = new Subject<any>();
   private localisationSubject = new Subject<string>();
+  private PedestrianSubject = new Subject<any>();
   constructor() {
     this.socket = new WebSocket(
       'ws://192.168.0.102/v0/slam/ws/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1ODA5MzQ3OCwiaWF0IjoxNzU3NDg4Njc4fQ.vz9gAAb2NgNLK6vtqE6KQfziYQYv0x-00ZybojV4tTE'
@@ -21,7 +22,15 @@ export class LocalmapService {
 
       this.socket.send(
         JSON.stringify({
-          start: ['FullPose', 'MetaData', 'SLAMStatus', 'ObjectDetections'],
+          start: [
+            'FullPose',
+            'MetaData',
+            'SLAMStatus',
+            'ObjectDetections',
+            'MarkerDetections',
+            'GlobalTrackedMarkers',
+            'SLAMStatus',
+          ],
         })
       );
     };
@@ -57,6 +66,17 @@ export class LocalmapService {
         if (data.meta_data?.DistanceTravelled !== undefined) {
           this.metaDataSubject.next(data.meta_data);
         }
+        if (data.object_detections?.objects) {
+          // console.log('pedddd', data.object_detections.objects);
+          const pedestrians = data.object_detections.objects
+            .filter((obj: any) => obj.label === 'Person')
+            .map((p: any, idx: number) => ({
+              id: idx,
+              world_location: p.world_location, // keep relative to robot
+            }));
+
+          this.PedestrianSubject.next(pedestrians);
+        }
       } catch (err) {
         console.error('Invalid WS message:', event.data, err);
       }
@@ -79,17 +99,7 @@ export class LocalmapService {
   getMetaData(): Observable<any> {
     return this.metaDataSubject.asObservable();
   }
-  // Send fences update to backend
-  // updateFences(fences: Shape[]) {
-  //   if (this.socket.readyState === WebSocket.OPEN) {
-  //     this.socket.send(
-  //       JSON.stringify({
-  //         type: 'update_fences',
-  //         fences,
-  //       })
-  //     );
-  //   } else {
-  //     console.warn('⚠️ Socket not open, cannot send fences');
-  //   }
-  // }
+  getPedestrians(): Observable<any[]> {
+    return this.PedestrianSubject.asObservable();
+  }
 }

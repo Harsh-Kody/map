@@ -90,6 +90,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private originalScale = 1;
   lastDirX: number | null = null;
   lastDirY: number | null = null;
+  pedestrians: any[] = [];
   minSquareBounds: {
     startX: number;
     startY: number;
@@ -178,7 +179,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       // } else {
       //   this.robots.push(robot);
       // }
-
+      const rawRobotX = robot.x;
+      const rawRobotY = robot.y;
       // // ✅ Save path points if enabled
       this.quaternionToEuler(robot.qx, robot.qy, robot.qz, robot.qw);
       const scaled = this.scaleCoords(robot.x, robot.y);
@@ -195,7 +197,21 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.robots.push(robot);
       }
       this.redraw();
+      this.localMapService.getPedestrians().subscribe((peds) => {
+        this.pedestrians = peds.map((p) => {
+          // Add relative body_location to **raw** robot coordinates
+          const worldX = p.world_location.x;
+          const worldY = p.world_location.y;
+
+          // Scale for canvas
+          const scaled = this.scaleCoords(worldX, worldY);
+          return { ...p, x: scaled.x, y: scaled.y };
+        });
+        // console.log('get peds ', this.pedestrians);
+        this.redraw();
+      });
     });
+
     this.localMapService.getMetaData().subscribe((meta) => {
       this.metaData = meta;
     });
@@ -207,7 +223,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   createMapForm() {
     this.mapForm = this.formBuilder.group({
       fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
-      shapeMode: [null, Validators.required],
+      shapeMode: [null, [Validators.required]],
       // circleRadius: [3, Validators.required],
       squareSize: [200, Validators.required],
       // triangleBase: [2, Validators.required],
@@ -293,6 +309,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       modal.close();
       this.redraw(); // redraw immediately to show grid
     } else {
+      const data = this.mapForm.value;
+      console.log('data', data);
       console.log('Form not valid');
     }
   }
@@ -554,38 +572,21 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           proposedShape.startX = proposedShape.endX! - size;
           proposedShape.endY = proposedShape.startY! + size;
         }
-      }
+        const clampedStart = this.clampToCanvas(
+          proposedShape.startX!,
+          proposedShape.startY!
+        );
+        const clampedEnd = this.clampToCanvas(
+          proposedShape.endX!,
+          proposedShape.endY!
+        );
 
-      //  else if (proposedShape.mode === 'triangle') {
-      //   switch (this.activeHandleIndex) {
-      //     case 0: // bottom-left
-      //       proposedShape.startX = x;
-      //       proposedShape.startY = y;
-      //       proposedShape.endX = this.originalPoints[1].x;
-      //       proposedShape.endY = this.originalPoints[1].y;
-      //       proposedShape.topX = this.originalPoints[2].x;
-      //       proposedShape.topY = this.originalPoints[2].y;
-      //       break;
-      //     case 1: // bottom-right
-      //       proposedShape.endX = x;
-      //       proposedShape.endY = y;
-      //       proposedShape.startX = this.originalPoints[0].x;
-      //       proposedShape.startY = this.originalPoints[0].y;
-      //       proposedShape.topX = this.originalPoints[2].x;
-      //       proposedShape.topY = this.originalPoints[2].y;
-      //       break;
-      //     case 2: // top
-      //       proposedShape.topX = x;
-      //       proposedShape.topY = y;
-      //       proposedShape.startX = this.originalPoints[0].x;
-      //       proposedShape.startY = this.originalPoints[0].y;
-      //       proposedShape.endX = this.originalPoints[1].x;
-      //       proposedShape.endY = this.originalPoints[1].y;
-      //       break;
-      //   }
-      // }
-      else if (proposedShape.mode === 'free' && proposedShape.points) {
-        proposedShape.points[this.activeHandleIndex] = { x, y };
+        proposedShape.startX = clampedStart.x;
+        proposedShape.startY = clampedStart.y;
+        proposedShape.endX = clampedEnd.x;
+        proposedShape.endY = clampedEnd.y;
+      } else if (proposedShape.mode === 'free' && proposedShape.points) {
+        proposedShape.points[this.activeHandleIndex] = this.clampToCanvas(x, y);
       }
 
       const idx = this.polygons.indexOf(this.resizingShape);
@@ -610,22 +611,64 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const dy = y - this.dragOffset.y;
 
       if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
-        this.draggingShape.points = this.originalPoints.map((p) => ({
+        const movedPoints = this.originalPoints.map((p) => ({
           x: p.x + dx,
           y: p.y + dy,
         }));
-      } else {
-        const width =
-          (this.draggingShape.endX ?? this.draggingShape.startX!) -
-          this.draggingShape.startX!;
-        const height =
-          (this.draggingShape.endY ?? this.draggingShape.startY!) -
-          this.draggingShape.startY!;
+        // ✅ Clamp entire polygon
+        const minX = Math.min(...movedPoints.map((p) => p.x));
+        const minY = Math.min(...movedPoints.map((p) => p.y));
+        const maxX = Math.max(...movedPoints.map((p) => p.x));
+        const maxY = Math.max(...movedPoints.map((p) => p.y));
 
-        this.draggingShape.startX = this.originalPoints[0].x + dx;
-        this.draggingShape.startY = this.originalPoints[0].y + dy;
-        this.draggingShape.endX = this.draggingShape.startX + width;
-        this.draggingShape.endY = this.draggingShape.startY + height;
+        const img = this.mapImage.nativeElement;
+        const shiftX = Math.max(0 - minX, Math.min(0, img.naturalWidth - maxX));
+        const shiftY = Math.max(
+          0 - minY,
+          Math.min(0, img.naturalHeight - maxY)
+        );
+
+        this.draggingShape.points = movedPoints.map((p) => ({
+          x: p.x + shiftX,
+          y: p.y + shiftY,
+        }));
+      } else {
+        const img = this.mapImage.nativeElement;
+        const canvasWidth = img.naturalWidth;
+        const canvasHeight = img.naturalHeight;
+
+        // original width & height
+        const width = this.draggingShape.endX! - this.draggingShape.startX!;
+        const height = this.draggingShape.endY! - this.draggingShape.startY!;
+
+        // proposed position
+        let newStartX = this.originalPoints[0].x + dx;
+        let newStartY = this.originalPoints[0].y + dy;
+        let newEndX = newStartX + width;
+        let newEndY = newStartY + height;
+
+        // ✅ shift entire square back inside if outside
+        if (newStartX < 0) {
+          newStartX = 0;
+          newEndX = width;
+        }
+        if (newStartY < 0) {
+          newStartY = 0;
+          newEndY = height;
+        }
+        if (newEndX > canvasWidth) {
+          newEndX = canvasWidth;
+          newStartX = canvasWidth - width;
+        }
+        if (newEndY > canvasHeight) {
+          newEndY = canvasHeight;
+          newStartY = canvasHeight - height;
+        }
+
+        this.draggingShape.startX = newStartX;
+        this.draggingShape.startY = newStartY;
+        this.draggingShape.endX = newEndX;
+        this.draggingShape.endY = newEndY;
       }
 
       if (this.clickedNonDraggableShape) {
@@ -650,6 +693,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     //   this.redraw();
     //   return; // skip shape hover / dragging logic
     // }
+  }
+  private clampToCanvas(x: number, y: number) {
+    const img = this.mapImage.nativeElement;
+    const maxX = img.naturalWidth;
+    const maxY = img.naturalHeight;
+
+    return {
+      x: Math.max(0, Math.min(x, maxX)),
+      y: Math.max(0, Math.min(y, maxY)),
+    };
   }
   private clampSquareSize(
     shape: Shape,
@@ -822,19 +875,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
-    if (event.button === 0) {
-      // if (!this.isImageFitted()) {
-      //   this.isPanning = true;
-      //   this.dragStart = {
-      //     x: event.clientX - this.offsetX,
-      //     y: event.clientY - this.offsetY,
-      //   };
-      //   this.mapCanvas.nativeElement.style.cursor = 'grabbing';
-      // } else {
-      //   this.isPanning = false;
-      //   this.mapCanvas.nativeElement.style.cursor = 'default';
-      // }
-    }
+    // if (event.button === 0) {
+    // if (!this.isImageFitted()) {
+    //   this.isPanning = true;
+    //   this.dragStart = {
+    //     x: event.clientX - this.offsetX,
+    //     y: event.clientY - this.offsetY,
+    //   };
+    //   this.mapCanvas.nativeElement.style.cursor = 'grabbing';
+    // } else {
+    //   this.isPanning = false;
+    //   this.mapCanvas.nativeElement.style.cursor = 'default';
+    // }
+    // }
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
@@ -846,6 +899,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
     if (this.copyMode) {
+      console.log('copy mode', this.copyMode);
       if (!this.copiedShapeTemplate) {
         // Step 1: select a shape to copy
         for (let i = this.polygons.length - 1; i >= 0; i--) {
@@ -1292,6 +1346,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     });
     this.drawGrid();
     this.drawRobots();
+    this.drawPedestrians();
   }
   // @HostListener('mouseleave', ['$event'])
   // onMouseLeave(event: MouseEvent) {
@@ -1491,6 +1546,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return; // don't save free polygon here, handled by dblclick
     }
     if (this.copiedShapeTemplate) {
+      console.log('copied shape', this.copiedShapeTemplate);
       const { x, y } = this.getTransformedCoords(event);
 
       const placedShape: Shape = JSON.parse(
@@ -2033,7 +2089,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
         this.resetEditState();
         this.ignoreNextClickAfterEdit = true;
-        this.shapeMode = null;
+        // this.shapeMode = null;
         this.pendingTool = null;
         this.isDrawingShape = false;
         this.currentShape = null;
@@ -2172,7 +2228,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   //   event.preventDefault();
   // }
   private scaleCoords(x: number, y: number): { x: number; y: number } {
-    const scale = 30; // scale from backend map to current map
+    const scale = 23.51; // scale from backend map to current map
     return {
       x: x * scale,
       y: y * scale,
@@ -2211,7 +2267,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   ) {
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-    const visibleRange = range * this.scale;
+    const visibleRange = range * this.scale * 2; // 🔥 make aura bigger
 
     const leftX = x + visibleRange * Math.cos(yawRad - fovRad / 2);
     const leftY = y + visibleRange * Math.sin(yawRad - fovRad / 2);
@@ -2219,25 +2275,79 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const rightX = x + visibleRange * Math.cos(yawRad + fovRad / 2);
     const rightY = y + visibleRange * Math.sin(yawRad + fovRad / 2);
 
+    // Draw aura (filled arc only, no joining line)
     ctx.beginPath();
     ctx.moveTo(x, y);
-
-    // left edge
-    ctx.lineTo(leftX, leftY);
-
-    // smooth curve instead of sharp line
-    ctx.arc(x, y, visibleRange, yawRad - fovRad / 2, yawRad + fovRad / 2);
-
-    // close back to center
-    ctx.closePath();
-
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+    ctx.arc(
+      x,
+      y,
+      visibleRange,
+      yawRad - fovRad / 2,
+      yawRad + fovRad / 2,
+      false
+    );
+    ctx.fillStyle = 'rgba(0, 64, 255, 0.15)'; // softer aura
     ctx.fill();
 
+    // Draw only the arc boundary (no base line)
+    ctx.beginPath();
+    ctx.arc(
+      x,
+      y,
+      visibleRange,
+      yawRad - fovRad / 2,
+      yawRad + fovRad / 2,
+      false
+    );
     ctx.strokeStyle = 'darkgreen';
     ctx.lineWidth = 2;
-    ctx.stroke();
+    // ctx.stroke();
+
+    // Optionally draw left and right edge rays
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(leftX, leftY);
+    ctx.moveTo(x, y);
+    ctx.lineTo(rightX, rightY);
+    // ctx.stroke();
   }
+  private drawPedestrians() {
+    if (!this.pedestrians || this.pedestrians.length === 0) return;
+    const ctx = this.ctx!;
+    const size = 10;
+
+    for (const p of this.pedestrians) {
+      const { x, y } = this.toCanvasCoords(p.x, p.y); // <-- transform coordinates
+      ctx.beginPath();
+      ctx.arc(x, y - size / 2, size / 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'green';
+      ctx.fill();
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // body
+      ctx.beginPath();
+      ctx.moveTo(x, y - size / 4);
+      ctx.lineTo(x, y + size / 2);
+      ctx.stroke();
+
+      // arms
+      ctx.beginPath();
+      ctx.moveTo(x - size / 2, y);
+      ctx.lineTo(x + size / 2, y);
+      ctx.stroke();
+
+      // legs
+      ctx.beginPath();
+      ctx.moveTo(x, y + size / 2);
+      ctx.lineTo(x - size / 3, y + size);
+      ctx.moveTo(x, y + size / 2);
+      ctx.lineTo(x + size / 3, y + size);
+      ctx.stroke();
+    }
+  }
+
   private drawRobotPath() {
     if (!this.showPath || this.robotPath.length < 2) return;
     const ctx = this.ctx!;

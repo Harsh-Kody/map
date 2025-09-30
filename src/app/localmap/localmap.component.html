@@ -2,7 +2,9 @@
   <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
   <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
   <div class="controls">
+    @if (!isDrawingShape) {
     <button (click)="startAddGeofence()">Add Geofence</button>
+    }
 
     <button (click)="zoomIn()">+</button>
     <button (click)="zoomOut()">-</button>
@@ -13,19 +15,22 @@
     </button>
     <button (click)="togglePath()">Toggle Path</button>
     <div *ngIf="shapeMode === 'free' && isDrawingShape">
-      <!-- <button (click)="completeFreeGeofence()">Complete Free Geofence</button> -->
       <button
         (click)="undoLastFreePoint()"
         [disabled]="currentPolygon.length <= 1"
       >
         Undo
       </button>
+      <button (click)="finalizeShape()">Finalize Free Shape</button>
     </div>
     <!-- <div *ngIf="hoveredShape"> -->
     <button (click)="copyGeofence()">Copy</button>
+    <!-- @if (currentShape && shapeMode !== 'free') {
+
     <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
       Finalize Shape
     </button>
+    } -->
     <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
   </div>
 
