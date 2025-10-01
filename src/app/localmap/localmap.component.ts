@@ -63,7 +63,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   deleteMode: boolean = false;
   hoveredShape: Shape | null = null;
   mapImageSrc: string | null = null;
-  private readonly HANDLE_TOLERANCE = 20;
+  private readonly HANDLE_TOLERANCE = 10;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
   showPath = false;
   robotPath: { x: number; y: number }[] = [];
@@ -91,12 +91,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   lastDirX: number | null = null;
   lastDirY: number | null = null;
   pedestrians: any[] = [];
+  markers: any[] = [];
   minSquareBounds: {
     startX: number;
     startY: number;
     endX: number;
     endY: number;
   } | null = null;
+  gridFlag: boolean = false;
   constructor(
     private localMapService: LocalmapService,
     private mapStorage: MapStorageService,
@@ -198,16 +200,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       this.redraw();
       this.localMapService.getPedestrians().subscribe((peds) => {
-        this.pedestrians = peds.map((p) => {
-          // Add relative body_location to **raw** robot coordinates
-          const worldX = p.world_location.x;
-          const worldY = p.world_location.y;
-
-          // Scale for canvas
-          const scaled = this.scaleCoords(worldX, worldY);
-          return { ...p, x: scaled.x, y: scaled.y };
-        });
-        // console.log('get peds ', this.pedestrians);
+        this.pedestrians = peds
+          .map((p) => {
+            if (!p.world_location) return null; // skip invalid
+            const { x: worldX, y: worldY } = p.world_location;
+            const scaled = this.scaleCoords(worldX, worldY);
+            return { ...p, x: scaled.x, y: scaled.y };
+          })
+          .filter((p) => p !== null);
         this.redraw();
       });
     });
@@ -217,6 +217,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     });
     this.localMapService.getLocalisationStatus().subscribe((status) => {
       this.localisationStatus = status;
+    });
+    this.localMapService.getMarkers().subscribe((markers) => {
+      this.markers = markers.map((m) => {
+        const scaled = this.scaleCoords(m.x, m.y);
+        return { ...m, x: scaled.x, y: scaled.y };
+      });
+      this.redraw();
     });
   }
 
@@ -526,7 +533,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       //   proposedShape.endY = y;
       // } else
       if (proposedShape.mode === 'square' && this.activeHandleIndex !== null) {
-        const minSize = 20 / Math.max(this.scale, 0.001);
+        const minSize = 30;
 
         switch (this.activeHandleIndex) {
           case 0: // top-left
@@ -647,7 +654,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         let newEndX = newStartX + width;
         let newEndY = newStartY + height;
 
-        // ✅ shift entire square back inside if outside
+        // ✅shift entire square back inside if outside
         if (newStartX < 0) {
           newStartX = 0;
           newEndX = width;
@@ -888,6 +895,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     //   this.mapCanvas.nativeElement.style.cursor = 'default';
     // }
     // }
+
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
@@ -960,6 +968,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         }
 
         // ✅ Save
+        console.log('pushed one point ');
         this.polygons.push(newShape);
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
 
@@ -1015,7 +1024,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           if (!this.isShapeInsideCanvas(newShape)) {
             alert('Fence is outside the boundary!');
           } else {
-            console.log('pushedd');
+            console.log('pushedd in dif points');
             this.polygons.push(newShape);
             localStorage.setItem('geoFences', JSON.stringify(this.polygons));
             this.redraw();
@@ -1211,7 +1220,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     return true;
   }
-
+  toggleGrid() {
+    this.gridEnabled = !this.gridEnabled;
+    this.redraw();
+  }
   private redraw() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
@@ -1304,7 +1316,37 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.ctx.restore();
     }
+    if (this.markers) {
+      this.markers.forEach((marker) => {
+        const c = this.toCanvasCoords(marker.x, marker.y);
+        const yaw = this.quaternionToYawFixed(
+          marker.qx,
+          marker.qy,
+          marker.qz,
+          marker.qw
+        );
 
+        this.ctx.save();
+        this.ctx.translate(c.x, c.y);
+        this.ctx.rotate(yaw);
+
+        // Draw an arrow pointing along +X (canvas right)
+        this.ctx.beginPath();
+        this.ctx.moveTo(10, 0); // tip along +X
+        this.ctx.lineTo(-6, -6); // back left
+        this.ctx.lineTo(-6, 6); // back right
+        this.ctx.closePath();
+        this.ctx.fillStyle = 'red';
+        this.ctx.fill();
+
+        this.ctx.restore();
+
+        // Draw marker ID near it
+        this.ctx.fillStyle = 'blue';
+        this.ctx.font = '10px Arial';
+        this.ctx.fillText(marker.id.toString(), c.x + 10, c.y - 10);
+      });
+    }
     if (this.showPath && this.robotPath.length > 1) {
       this.ctx.save();
       this.ctx.beginPath();
@@ -1363,6 +1405,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return `rgba(${r},${g},${b},${alpha})`;
   }
   onCanvasClick(event: MouseEvent) {
+    if (this.suppressClick) {
+      this.suppressClick = false; // reset
+      return;
+    }
     if (event.button !== 0) return;
     // if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
@@ -1387,13 +1433,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     if (this.shapeMode === 'free') {
       if (!this.isDrawingShape) {
-        this.currentPolygon = [];
+        // brand new polygon
+        this.currentPolygon = [{ x, y }];
+        this.isDrawingShape = true;
+      } else {
+        // add more points
+        this.currentPolygon.push({ x, y });
       }
-      this.currentPolygon.push({ x, y });
-      this.isDrawingShape = true;
       this.redraw();
       return;
     }
+
     this.currentShape = {
       mode: this.shapeMode,
       startX: snappedX,
@@ -1483,30 +1533,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   isNearHandle(shape: Shape | null, mouseCanvas: { x: number; y: number }) {
     if (!shape) return null;
-    const tol = 10 * this.scale; // tolerance adjusted for zoom
 
-    // if (shape.mode === 'circle' && shape.radius) {
-    //   const center = this.toCanvasCoords(shape.startX!, shape.startY!);
-    //   const edge = this.toCanvasCoords(shape.endX!, shape.endY!);
-    //   const radius = Math.hypot(edge.x - center.x, edge.y - center.y);
+    const tol = 10; // fixed 10px tolerance, independent of zoom
 
-    //   // Handle is on right side of circle
-    //   const handle = { x: center.x + radius, y: center.y };
-
-    //   if (
-    //     Math.hypot(mouseCanvas.x - handle.x, mouseCanvas.y - handle.y) < tol
-    //   ) {
-    //     return { kind: 'ew', index: 0 };
-    //   }
-    // } else
     if (shape.mode === 'square') {
       const corners = this.getShapeCorners(shape);
       for (let i = 0; i < corners.length; i++) {
-        const cCanvas = this.toCanvasCoords(corners[i].x, corners[i].y); // ✅ FIX
-        if (
-          Math.abs(mouseCanvas.x - cCanvas.x) < tol &&
-          Math.abs(mouseCanvas.y - cCanvas.y) < tol
-        ) {
+        const cCanvas = this.toCanvasCoords(corners[i].x, corners[i].y);
+        const dist = Math.hypot(
+          mouseCanvas.x - cCanvas.x,
+          mouseCanvas.y - cCanvas.y
+        );
+        if (dist <= tol) {
           return { kind: 'nwse', index: i };
         }
       }
@@ -1516,7 +1554,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       );
       for (let i = 0; i < canvasPoints.length; i++) {
         const p = canvasPoints[i];
-        if (Math.hypot(mouseCanvas.x - p.x, mouseCanvas.y - p.y) < tol) {
+        const dist = Math.hypot(mouseCanvas.x - p.x, mouseCanvas.y - p.y);
+        if (dist <= tol) {
           return { kind: 'nwse', index: i };
         }
       }
@@ -1568,7 +1607,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         placedShape.endX! += dx;
         placedShape.endY! += dy;
       }
-
+      console.log('inside mouseup');
       if (!this.doesShapeOverlap(placedShape)) {
         this.polygons.push(placedShape);
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
@@ -1590,60 +1629,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.resizingShape = null;
       return;
     }
-    // ✅ Handle modal-created tools (pendingTool)
-    // if (this.pendingTool) {
-    //   const tool = this.pendingTool;
-    //   let newShape: Shape | null = null;
-
-    //   if (tool.shapeMode === 'square') {
-    //     newShape = {
-    //       mode: 'square',
-    //       startX: x,
-    //       startY: y,
-    //       endX: x + tool.squareSize,
-    //       endY: y + tool.squareSize,
-    //       color: tool.color,
-    //       isDraggable: tool.isDrag,
-    //       isResizable: tool.isResize,
-    //       name: tool.fenceName,
-    //     };
-    //     this.gridEnabled = false;
-    //   } else if (tool.shapeMode === 'free') {
-    //     this.shapeMode = 'free';
-    //     this.currentPolygon = [{ x, y }];
-    //     this.isDrawingShape = true;
-    //     this.redraw();
-    //     this.pendingTool = null;
-    //     return;
-    //   }
-    //   if (newShape) {
-    //     if (newShape.mode == 'square') {
-    //       this.normalizeSquare(newShape);
-    //     }
-    //     //  Duplicate check
-    //     if (this.isDuplicateName(newShape.name)) {
-    //       return;
-    //     }
-
-    //     if (!this.doesShapeOverlap(newShape)) {
-    //       this.polygons.push(newShape);
-    //       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-    //       this.redraw();
-    //     } else {
-    //       alert('Invalid shape: overlaps another!');
-    //     }
-    //   }
-    //   // if (newShape && !this.doesShapeOverlap(newShape)) {
-    //   //   this.polygons.push(newShape);
-    //   //   localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-    //   //   this.redraw();
-    //   // } else if (newShape) {
-    //   //   alert('Invalid shape: overlaps another!');
-    //   // }
-
-    //   this.pendingTool = null;
-    //   return;
-    // }
 
     this.suppressClick = this.dragDistance > this.CLICK_DRAG_THRESHOLD;
     this.isPanning = false;
@@ -1830,37 +1815,37 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     ctx.restore();
   }
-  finishShape(newShape: Shape) {
-    this.isEditing = false;
-    this.mapForm.reset({
-      fenceName: '',
-      isDrag: true,
-      isResize: true,
-    });
+  // finishShape(newShape: Shape) {
+  //   this.isEditing = false;
+  //   this.mapForm.reset({
+  //     fenceName: '',
+  //     isDrag: true,
+  //     isResize: true,
+  //   });
 
-    const modalRef = this.modalService.open(this.fenceModal, {
-      backdrop: 'static',
-    });
+  //   const modalRef = this.modalService.open(this.fenceModal, {
+  //     backdrop: 'static',
+  //   });
 
-    modalRef.result
-      .then(() => {
-        const fenceName = this.mapForm.controls['fenceName'].value;
-        const isDrag = this.mapForm.controls['isDrag'].value;
-        const isResize = this.mapForm.controls['isResize'].value;
+  //   modalRef.result
+  //     .then(() => {
+  //       const fenceName = this.mapForm.controls['fenceName'].value;
+  //       const isDrag = this.mapForm.controls['isDrag'].value;
+  //       const isResize = this.mapForm.controls['isResize'].value;
 
-        if (this.isDuplicateName(fenceName)) {
-          return;
-        }
-        newShape.name = fenceName;
-        newShape.isDraggable = isDrag;
-        newShape.isResizable = isResize;
-        this.polygons.push(newShape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        // this.carSocket.updateFences(this.polygons);
-        this.redraw();
-      })
-      .catch(() => {});
-  }
+  //       if (this.isDuplicateName(fenceName)) {
+  //         return;
+  //       }
+  //       newShape.name = fenceName;
+  //       newShape.isDraggable = isDrag;
+  //       newShape.isResizable = isResize;
+  //       this.polygons.push(newShape);
+  //       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+  //       // this.carSocket.updateFences(this.polygons);
+  //       this.redraw();
+  //     })
+  //     .catch(() => {});
+  // }
 
   public isDuplicateName(
     name?: string | null,
@@ -2165,7 +2150,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (shape.mode === 'square') {
       const topLeft = this.toCanvasCoords(shape.startX!, shape.startY!);
       const bottomRight = this.toCanvasCoords(shape.endX!, shape.endY!);
-
       this.ctx.rect(
         topLeft.x,
         topLeft.y,
@@ -2192,6 +2176,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   hasError(ControlName: string, Errorname: string) {
     return this.mapForm.get(ControlName)?.hasError(Errorname);
+  }
+  private quaternionToYawFixed(
+    qx: number,
+    qy: number,
+    qz: number,
+    qw: number
+  ): number {
+    // Convert quaternion to Euler (yaw) in radians
+    const siny_cosp = 2 * (qw * qz + qx * qy);
+    const cosy_cosp = 1 - 2 * (qy * qy + qz * qz);
+    let yaw = Math.atan2(siny_cosp, cosy_cosp);
+
+    // Flip for canvas Y-down
+    yaw = -yaw;
+
+    // Adjust if your marker faces up by default
+    yaw += Math.PI / 2;
+
+    return yaw;
   }
   private fitImageToCanvas() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
@@ -2476,7 +2479,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.MAX_SCALE
     );
     if (newScale === oldScale) return;
-
     const canvas = this.mapCanvas.nativeElement;
     const cx = canvas.clientWidth / 2;
     const cy = canvas.clientHeight / 2;

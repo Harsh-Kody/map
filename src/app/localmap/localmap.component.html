@@ -32,6 +32,9 @@
     </button>
     } -->
     <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
+    <button (click)="toggleGrid()">
+      {{ gridEnabled ? "Hide Grid" : "Show Grid" }}
+    </button>
   </div>
 
   <div class="fence-log">
@@ -66,7 +69,7 @@
   </div>
 </div>
 <div class="robot-info">
-  <h3>Robot Coords</h3>
+  <h5><b>Robot Coords</b></h5>
   <div *ngIf="robots.length > 0; else noRobot">
     <div *ngFor="let r of robots">
       <strong>{{ r.name || "Robot " }}</strong
@@ -92,6 +95,10 @@
       Localisation Status: <strong>{{ localisationStatus }}</strong>
     </p>
   </div>
+  <h5><b>Pedestrians</b></h5>
+  <p>
+    Detected Pedestrians: <strong>{{ pedestrians.length }}</strong>
+  </p>
 </div>
 <!-- <ng-template #fenceModal let-modal>
   <form [formGroup]="mapForm" (ngSubmit)="onSubmit(modal)">

@@ -2,6 +2,7 @@ import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
 import { LocalmapComponent } from './localmap/localmap.component';
 import { UploadMapComponent } from './upload-map/upload-map.component';
+import { RobotComponent } from './robot/robot.component';
 
 const routes: Routes = [
   { path: 'upload-map', component: UploadMapComponent },

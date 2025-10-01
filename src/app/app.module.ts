@@ -8,21 +8,23 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { UploadMapComponent } from './upload-map/upload-map.component';
 import { ImageCropperModule } from 'ngx-image-cropper';
 import { FenceModalComponent } from './fence-modal/fence-modal.component';
+import { RobotComponent } from './robot/robot.component';
 @NgModule({
   declarations: [
     AppComponent,
     LocalmapComponent,
     UploadMapComponent,
     FenceModalComponent,
+    RobotComponent,
   ],
   imports: [
     BrowserModule,
     AppRoutingModule,
     FormsModule,
     ReactiveFormsModule,
-    ImageCropperModule
+    ImageCropperModule,
   ],
   providers: [],
-  bootstrap: [AppComponent]
+  bootstrap: [AppComponent],
 })
-export class AppModule { }
+export class AppModule {}

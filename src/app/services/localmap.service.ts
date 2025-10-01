@@ -12,6 +12,7 @@ export class LocalmapService {
   private metaDataSubject = new Subject<any>();
   private localisationSubject = new Subject<string>();
   private PedestrianSubject = new Subject<any>();
+  private markerSubject = new Subject<any[]>();
   constructor() {
     this.socket = new WebSocket(
       'ws://192.168.0.102/v0/slam/ws/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1ODA5MzQ3OCwiaWF0IjoxNzU3NDg4Njc4fQ.vz9gAAb2NgNLK6vtqE6KQfziYQYv0x-00ZybojV4tTE'
@@ -19,7 +20,6 @@ export class LocalmapService {
 
     this.socket.onopen = () => {
       console.log('✅ Connected to backend');
-
       this.socket.send(
         JSON.stringify({
           start: [
@@ -37,12 +37,13 @@ export class LocalmapService {
     this.socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        // console.log('marker detection', data);
         if (data.full_pose?.localisation_status?.status) {
-          const status = data.full_pose.localisation_status.status;
-          if (status === 'Ok') {
+          const status = data.full_pose.localisation_status.localised;
+          if (status) {
             this.localisationSubject.next('Localized');
           } else {
-            this.localisationSubject.next(status);
+            this.localisationSubject.next('Relocalising');
           }
         }
         if (data.full_pose?.pose) {
@@ -77,6 +78,19 @@ export class LocalmapService {
 
           this.PedestrianSubject.next(pedestrians);
         }
+        if (data.tracked_markers) {
+          const markers = data.tracked_markers.map((m: any) => ({
+            id: m.id,
+            x: m.estimated_pose.x,
+            y: m.estimated_pose.y,
+            qx: m.estimated_pose.qx,
+            qy: m.estimated_pose.qy,
+            qz: m.estimated_pose.qz,
+            qw: m.estimated_pose.qw,
+          }));
+          this.markerSubject.next(markers);
+          // console.log('markers', markers);
+        }
       } catch (err) {
         console.error('Invalid WS message:', event.data, err);
       }
@@ -101,5 +115,8 @@ export class LocalmapService {
   }
   getPedestrians(): Observable<any[]> {
     return this.PedestrianSubject.asObservable();
+  }
+  getMarkers(): Observable<any[]> {
+    return this.markerSubject.asObservable();
   }
 }
