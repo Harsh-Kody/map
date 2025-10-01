@@ -117,14 +117,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     '#ff00ff',
     '#000000',
     '#008080',
-    '#FFFFFF',
     '#f37934',
     '#b8312f',
     '#ffb7ce',
     '#dfc5fe',
     '#8b48d2',
     '#257623ff',
-    '#c3c327ff',
   ];
   copyMode: boolean = false;
   copiedShapeTemplate: Shape | null = null;
@@ -192,6 +190,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       if (this.showPath) {
         this.robotPath.push({ x: robot.x, y: robot.y });
       }
+
       const idx = this.robots.findIndex((r) => r.id === robot.id);
       if (idx >= 0) {
         this.robots[idx] = robot;
@@ -837,6 +836,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   undoLastFreePoint() {
     if (this.currentPolygon.length > 0) {
       this.currentPolygon.pop();
+      console.log('current polygon', this.currentPolygon.length);
       this.redraw();
     }
   }
@@ -1010,7 +1010,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       } else if (tool.shapeMode === 'free') {
         // Start free polygon drawing
         this.shapeMode = 'free';
-        this.currentPolygon = [{ x, y }];
+        // this.currentPolygon = [{ x, y }];
         this.isDrawingShape = true;
         this.redraw();
         this.pendingTool = null;
@@ -1330,21 +1330,37 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.ctx.translate(c.x, c.y);
         this.ctx.rotate(yaw);
 
-        // Draw an arrow pointing along +X (canvas right)
+        // --- Base circle (robot body) ---
         this.ctx.beginPath();
-        this.ctx.moveTo(10, 0); // tip along +X
-        this.ctx.lineTo(-6, -6); // back left
-        this.ctx.lineTo(-6, 6); // back right
-        this.ctx.closePath();
-        this.ctx.fillStyle = 'red';
+        this.ctx.arc(0, 0, 8, 0, 2 * Math.PI, false);
+        this.ctx.fillStyle = '#0078ff'; // Slamcore-style blue
         this.ctx.fill();
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = 'white'; // nice outline
+        this.ctx.stroke();
 
+        // --- Directional pointer ---
+        this.ctx.beginPath();
+        this.ctx.moveTo(8, 0); // starts at circle edge
+        this.ctx.lineTo(18, 0); // forward pointer
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = '#0078ff';
+        this.ctx.stroke();
+
+        // Optional: little arrowhead
+        this.ctx.beginPath();
+        this.ctx.moveTo(18, 0);
+        this.ctx.lineTo(14, -4);
+        this.ctx.lineTo(14, 4);
+        this.ctx.closePath();
+        this.ctx.fillStyle = '#0078ff';
+        this.ctx.fill();
         this.ctx.restore();
-
-        // Draw marker ID near it
-        this.ctx.fillStyle = 'blue';
-        this.ctx.font = '10px Arial';
-        this.ctx.fillText(marker.id.toString(), c.x + 10, c.y - 10);
+        // --- Marker ID (above marker) ---
+        this.ctx.fillStyle = 'black';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(marker.id.toString(), c.x, c.y - 14);
       });
     }
     if (this.showPath && this.robotPath.length > 1) {
@@ -1412,8 +1428,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (event.button !== 0) return;
     // if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
+
     const snappedX = Math.floor(x / this.gridSize) * this.gridSize;
     const snappedY = Math.floor(y / this.gridSize) * this.gridSize;
+
     if (this.deleteMode) {
       const { x, y } = this.getTransformedCoords(event);
       for (let i = this.polygons.length - 1; i >= 0; i--) {
@@ -1431,17 +1449,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapCanvas.nativeElement.style.cursor = 'default';
       return;
     }
+
     if (this.shapeMode === 'free') {
       if (!this.isDrawingShape) {
+        return;
         // brand new polygon
-        this.currentPolygon = [{ x, y }];
-        this.isDrawingShape = true;
+        // this.currentPolygon = [{ x, y }];
+        // this.isDrawingShape = true;
       } else {
         // add more points
         this.currentPolygon.push({ x, y });
+        this.redraw();
       }
-      this.redraw();
-      return;
     }
 
     this.currentShape = {
@@ -1710,6 +1729,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const stored = localStorage.getItem('geoFences');
     return stored ? JSON.parse(stored) : [];
   }
+
   private isPointInCircle(
     point: { x: number; y: number },
     circle: { startX: number; startY: number; radius: number }
@@ -2270,15 +2290,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   ) {
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-    const visibleRange = range * this.scale * 2; // 🔥 make aura bigger
+    const visibleRange = range * this.scale * 2;
 
-    const leftX = x + visibleRange * Math.cos(yawRad - fovRad / 2);
-    const leftY = y + visibleRange * Math.sin(yawRad - fovRad / 2);
+    // Gradient fill (bright blue near robot, transparent at edge)
+    const gradient = ctx.createRadialGradient(x, y, 0, x, y, visibleRange);
+    gradient.addColorStop(0, 'rgba(0, 128, 255, 0.25)');
+    gradient.addColorStop(1, 'rgba(0, 128, 255, 0)');
 
-    const rightX = x + visibleRange * Math.cos(yawRad + fovRad / 2);
-    const rightY = y + visibleRange * Math.sin(yawRad + fovRad / 2);
-
-    // Draw aura (filled arc only, no joining line)
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.arc(
@@ -2289,30 +2307,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       yawRad + fovRad / 2,
       false
     );
-    ctx.fillStyle = 'rgba(0, 64, 255, 0.15)'; // softer aura
+    ctx.closePath();
+
+    ctx.fillStyle = gradient;
     ctx.fill();
-
-    // Draw only the arc boundary (no base line)
-    ctx.beginPath();
-    ctx.arc(
-      x,
-      y,
-      visibleRange,
-      yawRad - fovRad / 2,
-      yawRad + fovRad / 2,
-      false
-    );
-    ctx.strokeStyle = 'darkgreen';
-    ctx.lineWidth = 2;
-    // ctx.stroke();
-
-    // Optionally draw left and right edge rays
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(leftX, leftY);
-    ctx.moveTo(x, y);
-    ctx.lineTo(rightX, rightY);
-    // ctx.stroke();
   }
   private drawPedestrians() {
     if (!this.pedestrians || this.pedestrians.length === 0) return;

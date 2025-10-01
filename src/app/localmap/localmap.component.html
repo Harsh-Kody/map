@@ -251,7 +251,7 @@
       <!-- Select Color -->
       <div class="mb-3">
         <label>Select Color</label>
-        <div class="d-flex gap-2">
+        <div class="color-palette">
           <button
             type="button"
             *ngFor="let c of colors"
@@ -259,7 +259,9 @@
             [style.background]="c"
             [class.selected]="mapForm.value.color === c"
             (click)="mapForm.patchValue({ color: c })"
-          ></button>
+          >
+            <span *ngIf="mapForm.value.color === c" class="checkmark">✓</span>
+          </button>
         </div>
       </div>
 

@@ -66,3 +66,38 @@
   font-family: Arial, sans-serif;
   font-size: 14px;
 }
+.color-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.color-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;  /* circular buttons */
+  border: 2px solid #ccc;
+  cursor: pointer;
+  position: relative;
+  outline: none;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.color-btn:hover {
+  transform: scale(1.1);
+  border-color: #888;
+}
+
+.color-btn.selected {
+  border-color: #0078ff; /* highlight border */
+  box-shadow: 0 0 6px rgba(0, 120, 255, 0.6);
+}
+
+.color-btn .checkmark {
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  position: absolute;
+  top: 2px;
+  left: 8px;
+}
