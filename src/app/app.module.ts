@@ -10,6 +10,14 @@ import { ImageCropperModule } from 'ngx-image-cropper';
 import { FenceModalComponent } from './fence-modal/fence-modal.component';
 import { NgChartsModule } from 'ng2-charts';
 import { RobotVibrationComponent } from './robot-vibration/robot-vibration.component';
+import { LoginComponent } from './login/login.component';
+import { HomeComponent } from './home/home.component';
+import {
+  HTTP_INTERCEPTORS,
+  provideHttpClient,
+  withInterceptorsFromDi,
+} from '@angular/common/http';
+import { AuthInterceptor } from './_auth/auth.interceptor';
 @NgModule({
   declarations: [
     AppComponent,
@@ -17,6 +25,8 @@ import { RobotVibrationComponent } from './robot-vibration/robot-vibration.compo
     UploadMapComponent,
     FenceModalComponent,
     RobotVibrationComponent,
+    LoginComponent,
+    HomeComponent,
   ],
   imports: [
     BrowserModule,
@@ -26,7 +36,14 @@ import { RobotVibrationComponent } from './robot-vibration/robot-vibration.compo
     ImageCropperModule,
     NgChartsModule,
   ],
-  providers: [],
+  providers: [
+    provideHttpClient(withInterceptorsFromDi()),
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: AuthInterceptor,
+      multi: true,
+    },
+  ],
   bootstrap: [AppComponent],
 })
 export class AppModule {}

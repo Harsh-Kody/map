@@ -1,0 +1,40 @@
+<div>
+  <h1>Login</h1>
+</div>
+<form action="" (ngSubmit)="login()" [formGroup]="loginForm" #Submit="ngForm">
+  <div>
+    <div>
+      <label for="key">UserName:-</label>
+      <input
+        type="text"
+        name=""
+        id="key"
+        placeholder="Enter UserName"
+        formControlName="username"
+      />
+      @if (Submit.submitted) {
+      <div class="text text-danger">
+        @if(hasError("username","required")){ *UserName is required }
+      </div>
+      }
+    </div>
+    <div>
+      <label for="key">Password:-</label>
+      <input
+        type="text"
+        name=""
+        id="key"
+        placeholder="Enter Password"
+        formControlName="password"
+      />
+      @if (Submit.submitted) {
+      <div class="text text-danger">
+        @if(hasError("password","required")){ *Password is required }
+      </div>
+      }
+    </div>
+    <div>
+      <button class="btn btn-success" type="submit">Login</button>
+    </div>
+  </div>
+</form>

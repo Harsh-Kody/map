@@ -1,0 +1,121 @@
+<div style="display: flex; justify-content: space-between">
+  <h1>Home</h1>
+  <button class="btn btn-success" routerLink="/upload-map">Upload-Map</button>
+  <button class="btn btn-danger" (click)="logOut()">LogOut</button>
+</div>
+
+<div>
+  <h2>Add Api_Key</h2>
+  <label for="">Enter-Key:-</label>
+  <input type="text" name="" id="" placeholder="Enter Key" [(ngModel)]="key" />
+  <button class="btn btn-success" (click)="addApiKey()">AddKey</button>
+</div>
+
+<!-- <label for="key">ApiKey:-</label>
+<input
+  type="text"
+  name=""
+  id="key"
+  placeholder="Enter UserName"
+  [(ngModel)]="apiKey"
+/>
+<button (click)="submitWithApikey()">Login</button> -->
+@if(keyList){
+<div>
+  <h2>Api_Key List</h2>
+  <table class="table table-bordered">
+    <thead>
+      <th>Last_Three_Char</th>
+      <th>Action</th>
+    </thead>
+    <tbody>
+      @for (key of keyList; track key) {
+      <tr>
+        <td>
+          {{ key.last_3_chars }}
+        </td>
+        <td>
+          <button class="btn btn-primary" (click)="deleteKey(key)">
+            Delete
+          </button>
+        </td>
+      </tr>
+      }
+    </tbody>
+  </table>
+</div>
+} @if(slam){
+<div>
+  <h2>Slam</h2>
+  <div>
+    State:
+    {{ slam.state }}
+  </div>
+  <div>
+    Health:- Licence:{{ slam.health.license }}, Camera:{{ slam.health.camera }}
+  </div>
+  <div>
+    SlamState:-Feature->markers->Detector:{{
+      slam.slam_state.features.markers.detector
+    }}
+  </div>
+  <div>
+    SlamState:-Feature->markers->database:{{
+      slam.slam_state.features.markers.database
+    }}
+  </div>
+  <div>
+    SlamState:-Feature->markers->runner:{{
+      slam.slam_state.features.perception.runner
+    }}
+  </div>
+  <div>external_storage:{{ slam.external_storage }}</div>
+</div>
+} @if (message_log) {
+<div>
+  <h2>Message_Log</h2>
+  <table class="table table-bordered">
+    <thead>
+      <th>severity</th>
+      <th>message</th>
+      <th>timestamp</th>
+    </thead>
+    <tbody>
+      @for (message of message_log.log; track message) {
+      <tr>
+        <td>{{ message.severity }}</td>
+        <td>{{ message.message }}</td>
+        <td>{{ message.timestamp }}</td>
+      </tr>
+      }
+    </tbody>
+  </table>
+</div>
+} @if (systemInfo) {
+<div>
+  <h2>SystemInfo</h2>
+  <p>HostName:{{ systemInfo.system.hostname }}</p>
+  <p>Software_version:{{ systemInfo.system.info.software_version }}</p>
+  <div>
+    Camera:
+    <table class="table table-bordered">
+      <thead>
+        <th>manufacturer</th>
+        <th>model</th>
+        <th>serial_number</th>
+        <th>firmware_version</th>
+      </thead>
+      <tbody>
+        @for (camera of systemInfo.system.info.cameras; track camera) {
+        <tr>
+          <td>{{ camera.manufacturer }}</td>
+          <td>{{ camera.model }}</td>
+          <td>{{ camera.serial_number }}</td>
+          <td>{{ camera.firmware_version }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+}
