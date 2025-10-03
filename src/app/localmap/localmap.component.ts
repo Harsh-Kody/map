@@ -16,7 +16,7 @@ import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
 import { FenceModalComponent } from '../fence-modal/fence-modal.component';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-
+import { ChartConfiguration, ChartOptions } from 'chart.js';
 @Component({
   selector: 'app-localmap',
   templateUrl: './localmap.component.html',
@@ -98,7 +98,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     endX: number;
     endY: number;
   } | null = null;
+  private lastRoll = 0;
+  private lastPitch = 0;
+  private lastYaw = 0;
   gridFlag: boolean = false;
+  vibrationData: number[] = [];
+  toggleMarker: boolean = false;
   constructor(
     private localMapService: LocalmapService,
     private mapStorage: MapStorageService,
@@ -106,9 +111,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     private formBuilder: FormBuilder,
     private router: Router
   ) {}
+
   private shapeToCopy: Shape | null = null;
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
+  lastX = 0;
+  lastY = 0;
+  lastZ = 0;
   colors = [
     '#ff006aff',
     '#00ff00',
@@ -126,6 +135,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   ];
   copyMode: boolean = false;
   copiedShapeTemplate: Shape | null = null;
+  lastQ = { qw: 0, qx: 0, qy: 0, qz: 0 };
   // startAddGeofence() {
   //   this.addingGeofence = true;
   //   this.currentPolygon = [];
@@ -173,16 +183,23 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapImageSrc = objectURL;
     }
     this.localMapService.getRobotLocation().subscribe((robot) => {
-      //    const idx = this.robots.findIndex((r) => r.id === robot.id);
-      // if (idx >= 0) {
-      //   this.robots[idx] = robot;
-      // } else {
-      //   this.robots.push(robot);
-      // }
-      const rawRobotX = robot.x;
-      const rawRobotY = robot.y;
-      // // ✅ Save path points if enabled
-      this.quaternionToEuler(robot.qx, robot.qy, robot.qz, robot.qw);
+      const time = Date.now();
+      const vibration = this.quaternionIntensity(
+        robot.qx,
+        robot.qy,
+        robot.qz,
+        robot.qw
+      );
+
+      this.chartData.datasets[0].data = [
+        ...this.chartData.datasets[0].data,
+        { x: time, y: vibration },
+      ];
+
+      if (this.chartData.datasets[0].data.length > 200) {
+        this.chartData.datasets[0].data =
+          this.chartData.datasets[0].data.slice(-200);
+      }
       const scaled = this.scaleCoords(robot.x, robot.y);
       robot.x = scaled.x;
       robot.y = scaled.y;
@@ -1224,6 +1241,35 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.gridEnabled = !this.gridEnabled;
     this.redraw();
   }
+  chartData: ChartConfiguration<'line'>['data'] = {
+    datasets: [
+      {
+        label: 'Vibration Intensity',
+        data: [] as { x: number; y: number }[], // 👈 tell TS what your points look like
+        borderColor: 'rgba(0, 200, 0, 0.8)',
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: 'rgba(0, 200, 0, 0.2)',
+        tension: 0.3,
+      },
+    ],
+  };
+
+  chartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    animation: { duration: 0 },
+    scales: {
+      x: {
+        type: 'time',
+        time: { unit: 'second' },
+        ticks: { display: true },
+      },
+      y: {
+        title: { display: true, text: 'Intensity' },
+      },
+    },
+  };
   private redraw() {
     const img: HTMLImageElement = this.mapImage.nativeElement;
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
@@ -1316,7 +1362,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.ctx.restore();
     }
-    if (this.markers) {
+    if (this.markers && this.toggleMarker) {
       this.markers.forEach((marker) => {
         const c = this.toCanvasCoords(marker.x, marker.y);
         const yaw = this.quaternionToYawFixed(
@@ -1333,7 +1379,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         // --- Base circle (robot body) ---
         this.ctx.beginPath();
         this.ctx.arc(0, 0, 8, 0, 2 * Math.PI, false);
-        this.ctx.fillStyle = '#0078ff'; // Slamcore-style blue
+        this.ctx.fillStyle = '#ff0000ff'; // Slamcore-style blue
         this.ctx.fill();
         this.ctx.lineWidth = 2;
         this.ctx.strokeStyle = 'white'; // nice outline
@@ -1344,7 +1390,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.ctx.moveTo(8, 0); // starts at circle edge
         this.ctx.lineTo(18, 0); // forward pointer
         this.ctx.lineWidth = 3;
-        this.ctx.strokeStyle = '#0078ff';
+        this.ctx.strokeStyle = '#ff0000ff';
         this.ctx.stroke();
 
         // Optional: little arrowhead
@@ -1353,7 +1399,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.ctx.lineTo(14, -4);
         this.ctx.lineTo(14, 4);
         this.ctx.closePath();
-        this.ctx.fillStyle = '#0078ff';
+        this.ctx.fillStyle = '#ff0000ff';
         this.ctx.fill();
         this.ctx.restore();
         // --- Marker ID (above marker) ---
@@ -1898,6 +1944,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.deleteMode = !this.deleteMode;
     }
   }
+  toggleMarkers() {
+    this.toggleMarker = !this.toggleMarker;
+    // if (condition) {
+
+    // }
+  }
   togglePath() {
     this.showPath = !this.showPath;
     if (!this.showPath) {
@@ -2279,7 +2331,22 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       roll: roll * (180 / Math.PI),
     };
   }
+  private quaternionIntensity(qx: number, qy: number, qz: number, qw: number) {
+    const dq = {
+      qw: Math.abs(qw - this.lastQ.qw),
+      qx: Math.abs(qx - this.lastQ.qx),
+      qy: Math.abs(qy - this.lastQ.qy),
+      qz: Math.abs(qz - this.lastQ.qz),
+    };
 
+    // Save last quaternion
+    this.lastQ = { qw, qx, qy, qz };
+
+    // "intensity" is the magnitude of change
+    return Math.sqrt(
+      dq.qw * dq.qw + dq.qx * dq.qx + dq.qy * dq.qy + dq.qz * dq.qz
+    );
+  }
   private drawCameraFOV(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -2441,6 +2508,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
     }
   }
+
   private isPointInSquare(
     point: { x: number; y: number },
     square: { startX: number; startY: number; endX: number; endY: number }

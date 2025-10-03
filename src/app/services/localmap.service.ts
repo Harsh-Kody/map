@@ -25,7 +25,6 @@ export class LocalmapService {
           start: [
             'FullPose',
             'MetaData',
-            'SLAMStatus',
             'ObjectDetections',
             'MarkerDetections',
             'GlobalTrackedMarkers',

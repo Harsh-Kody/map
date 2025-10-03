@@ -8,12 +8,15 @@ import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { UploadMapComponent } from './upload-map/upload-map.component';
 import { ImageCropperModule } from 'ngx-image-cropper';
 import { FenceModalComponent } from './fence-modal/fence-modal.component';
+import { NgChartsModule } from 'ng2-charts';
+import { RobotVibrationComponent } from './robot-vibration/robot-vibration.component';
 @NgModule({
   declarations: [
     AppComponent,
     LocalmapComponent,
     UploadMapComponent,
     FenceModalComponent,
+    RobotVibrationComponent,
   ],
   imports: [
     BrowserModule,
@@ -21,6 +24,7 @@ import { FenceModalComponent } from './fence-modal/fence-modal.component';
     FormsModule,
     ReactiveFormsModule,
     ImageCropperModule,
+    NgChartsModule,
   ],
   providers: [],
   bootstrap: [AppComponent],

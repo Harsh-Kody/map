@@ -11,11 +11,11 @@ export class AppComponent {
   constructor(private mapStorage: MapStorageService, private router: Router) {}
 
   async ngOnInit() {
-    const map = await this.mapStorage.getMap('mainMap');
-    if (map) {
-      this.router.navigate(['/localmap']);
-    } else {
-      this.router.navigate(['/upload-map']);
-    }
+    // const map = await this.mapStorage.getMap('mainMap');
+    // if (map) {
+    //   this.router.navigate(['/localmap']);
+    // } else {
+    //   this.router.navigate(['/upload-map']);
+    // }
   }
 }
