@@ -1,0 +1,40 @@
+.stream-dashboard {
+  .custom-ng-select {
+    .ng-select-container {
+      border-radius: 10px;
+      border: 2px solid #0d6efd;
+      min-height: 48px;
+    }
+  }
+
+  .btn {
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 10px 16px;
+    transition: all 0.2s ease-in-out;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .data-card {
+    border-radius: 12px;
+    transition: transform 0.2s ease-in-out;
+
+    &:hover {
+      transform: translateY(-4px);
+    }
+  }
+
+  .json-box {
+    background: #f8f9fa;
+    border: 1px dashed #dee2e6;
+    border-radius: 8px;
+    padding: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+  }
+}

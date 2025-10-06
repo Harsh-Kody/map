@@ -19,6 +19,9 @@ import {
 } from '@angular/common/http';
 import { AuthInterceptor } from './_auth/auth.interceptor';
 import { IPComponent } from './ip/ip.component';
+import { RobotComponent } from './robot/robot.component';
+import { DetailsComponent } from './details/details.component';
+import { NgSelectModule } from '@ng-select/ng-select';
 @NgModule({
   declarations: [
     AppComponent,
@@ -29,6 +32,8 @@ import { IPComponent } from './ip/ip.component';
     LoginComponent,
     HomeComponent,
     IPComponent,
+    RobotComponent,
+    DetailsComponent,
   ],
   imports: [
     BrowserModule,
@@ -37,6 +42,7 @@ import { IPComponent } from './ip/ip.component';
     ReactiveFormsModule,
     ImageCropperModule,
     NgChartsModule,
+    NgSelectModule,
   ],
   providers: [
     provideHttpClient(withInterceptorsFromDi()),

@@ -7,16 +7,18 @@ import { LoginComponent } from './login/login.component';
 import { HomeComponent } from './home/home.component';
 import { RobotComponent } from './robot/robot.component';
 import { IPComponent } from './ip/ip.component';
+import { DetailsComponent } from './details/details.component';
 
 const routes: Routes = [
   { path: '', component: LoginComponent },
-  { path: 'robot', component: RobotComponent },
+  // { path: 'robot', component: RobotComponent },
   // { path: 'detail', component: s },
+  { path: 'details', component: DetailsComponent },
   { path: 'ip', component: IPComponent },
   { path: 'home', component: HomeComponent },
   { path: 'upload-map', component: UploadMapComponent },
   { path: 'localmap', component: LocalmapComponent },
-  { path: 'graphs', component: RobotVibrationComponent },
+  { path: 'graphs', component: RobotComponent },
   { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
 ];
 

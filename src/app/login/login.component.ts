@@ -22,11 +22,17 @@ export class LoginComponent {
     private formBuilder: FormBuilder,
     private router: Router
   ) {
-    this.loginForm = this.formBuilder.group({
-      username: [null, [Validators.required]],
-      password: [null, [Validators.required]],
-    });
-    this.token = localStorage.getItem('userToken');
+    const ip = localStorage.getItem('_I');
+    if (ip) {
+      // const decodedIP = atob(ip);
+      this.loginForm = this.formBuilder.group({
+        username: [null, [Validators.required]],
+        password: [null, [Validators.required]],
+      });
+      this.token = localStorage.getItem('userToken');
+    } else {
+      this.router.navigate(['ip']);
+    }
   }
 
   ngOnInit(): void {}

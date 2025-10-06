@@ -1,8 +1,10 @@
 .map-container {
-  width: 600px;
-  height: 400px;
+  width: 100%;
+  height: 450px;
+  // border-radius: 8px;
+  overflow: hidden;
   margin: auto;
-  position: absolute;
+  position: relative;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -11,9 +13,31 @@
   border-radius: 8px;
 }
 
+
+// .map-container {
+//   width: 600px;
+//   height: 400px;
+//   margin: auto;
+//   position: absolute;
+//   top: 50%;
+//   left: 50%;
+//   transform: translate(-50%, -50%);
+//   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+//   border: 2px solid #ccc;
+//   border-radius: 8px;
+// }
+
 canvas {
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   display: block;
-  background: #f4f4f4;
+  background: transparent;
+  border-radius: 6px;
+}
+
+/* Ensure vibration graph matches map height */
+app-robot-vibration {
+  display: block;
+  width: 100%;
+  height: 450px;
 }
