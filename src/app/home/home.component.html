@@ -1,9 +1,39 @@
-<div style="display: flex; justify-content: space-between">
+<!-- <div style="display: flex; justify-content: space-between">
   <h1>Home</h1>
   <button class="btn btn-success" routerLink="/upload-map">Upload-Map</button>
   <button class="btn btn-danger" (click)="logOut()">LogOut</button>
-</div>
+</div> -->
+<nav class="navbar navbar-expand-lg navbar-primary bg-primary">
+  <a class="navbar-brand" href="#">Auto FC</a>
+  <button
+    class="navbar-toggler"
+    type="button"
+    data-bs-toggle="collapse"
+    data-bs-target="#navbarSupportedContent"
+    aria-controls="navbarSupportedContent"
+    aria-expanded="false"
+    aria-label="Toggle navigation"
+  >
+    <span class="navbar-toggler-icon"></span>
+  </button>
 
+  <div class="collapse navbar-collapse" id="navbarSupportedContent">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item">
+        <a class="nav-link" routerLink="/details">View Details</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" routerLink="/graphs">View Graphs</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" routerLink="/upload-map">Upload Map</a>
+      </li>
+      <li>
+        <a class="nav-link" (click)="logOut()">LogOut</a>
+      </li>
+    </ul>
+  </div>
+</nav>
 <div>
   <h2>Add Api_Key</h2>
   <label for="">Enter-Key:-</label>
@@ -16,7 +46,7 @@
   type="text"
   name=""
   id="key"
-  placeholder="Enter UserName"
+  placeholder="Enter Api key"
   [(ngModel)]="apiKey"
 />
 <button (click)="submitWithApikey()">Login</button> -->

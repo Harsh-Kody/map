@@ -18,6 +18,7 @@ import {
   withInterceptorsFromDi,
 } from '@angular/common/http';
 import { AuthInterceptor } from './_auth/auth.interceptor';
+import { IPComponent } from './ip/ip.component';
 @NgModule({
   declarations: [
     AppComponent,
@@ -27,6 +28,7 @@ import { AuthInterceptor } from './_auth/auth.interceptor';
     RobotVibrationComponent,
     LoginComponent,
     HomeComponent,
+    IPComponent,
   ],
   imports: [
     BrowserModule,
