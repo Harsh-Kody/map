@@ -1,25 +1,82 @@
 <div class="upload-container">
-  <input type="file" accept="image/*" (change)="onFileSelected($event)" />
+  <!-- Map Choice -->
+  <div class="mb-3 d-flex gap-3 align-items-center">
+    <label class="form-label fw-semibold"
+      >Do you want to use the robot map?</label
+    >
 
-  <div *ngIf="showCropper">
+    <div class="form-check form-check-inline">
+      <input
+        class="form-check-input"
+        type="radio"
+        name="mapChoice"
+        value="yes"
+        [(ngModel)]="mapChoice"
+      />
+      <label class="form-check-label">Yes</label>
+    </div>
+
+    <div class="form-check form-check-inline">
+      <input
+        class="form-check-input"
+        type="radio"
+        name="mapChoice"
+        value="no"
+        [(ngModel)]="mapChoice"
+      />
+      <label class="form-check-label">No</label>
+    </div>
+
+    <button
+      *ngIf="mapChoice === 'no'"
+      class="btn btn-outline-primary"
+      (click)="openCropperForUpload()"
+    >
+      Crop Image
+    </button>
+  </div>
+
+  <!-- Static Robot Map Preview -->
+  <div *ngIf="mapChoice === 'yes'" class="robot-map-container">
+    <img [src]="robotMapSrc" alt="Robot Map" class="robot-map-preview" />
+  </div>
+
+  <!-- Upload New Map -->
+  <div *ngIf="mapChoice === 'no'" class="upload-map-container">
+    <input
+      id="fileInput"
+      type="file"
+      accept="image/*"
+      (change)="onFileSelected($event)"
+      hidden
+    />
+
+    <!-- Show uploaded image before crop -->
+    <div *ngIf="robotMapSrc && !showCropper" class="robot-map-container mt-3">
+      <img [src]="robotMapSrc" class="robot-map-preview" />
+    </div>
+  </div>
+
+  <!-- Cropper Section -->
+  <div *ngIf="showCropper" class="cropper-section mt-3">
     <image-cropper
       [imageChangedEvent]="imageChangedEvent"
       [maintainAspectRatio]="false"
       format="png"
       (imageCropped)="imageCropped($event)"
-    >
-    </image-cropper>
+    ></image-cropper>
 
-    <div *ngIf="croppedImage">
-      <h4>Preview:</h4>
-      <img
-        [src]="croppedImage"
-        style="max-width: 300px; border: 1px solid #ccc"
-      />
+    <div *ngIf="croppedImage" class="preview-section mt-3">
+      <h6>Preview:</h6>
+      <img [src]="croppedImage" class="cropped-preview" />
     </div>
 
-    <button (click)="onUpload()">Save & Continue</button>
+    <button class="btn btn-primary mt-3" (click)="onUpload()">
+      Save & Continue
+    </button>
   </div>
 
-  <div *ngIf="errorMessage" class="error">{{ errorMessage }}</div>
+  <div *ngIf="errorMessage" class="alert alert-danger mt-3">
+    {{ errorMessage }}
+  </div>
 </div>

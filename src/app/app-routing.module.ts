@@ -8,6 +8,7 @@ import { HomeComponent } from './home/home.component';
 import { RobotComponent } from './robot/robot.component';
 import { IPComponent } from './ip/ip.component';
 import { DetailsComponent } from './details/details.component';
+import { DashboardComponent } from './dashboard/dashboard.component';
 
 const routes: Routes = [
   { path: '', component: LoginComponent },
@@ -19,6 +20,7 @@ const routes: Routes = [
   { path: 'upload-map', component: UploadMapComponent },
   { path: 'localmap', component: LocalmapComponent },
   { path: 'graphs', component: RobotComponent },
+  { path: 'dashboard', component: DashboardComponent },
   { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
 ];
 

@@ -20,21 +20,20 @@
       </ng-select>
     </div>
 
-    <!-- Buttons -->
     <div class="col-lg-4 col-md-6 d-flex gap-2">
       <button
-        class="btn btn-success flex-fill"
+        class="btn btn-success btn-sm flex-fill action-btn"
         (click)="startStream()"
         [disabled]="!selectedFilters.length"
       >
-        <i class="bi bi-play-fill"></i> Start Stream
+        <i class="bi bi-play-fill me-1"></i> Start
       </button>
       <button
-        class="btn btn-danger flex-fill"
+        class="btn btn-danger btn-sm flex-fill action-btn"
         (click)="endStream()"
         [disabled]="!selectedFilters.length"
       >
-        <i class="bi bi-stop-fill"></i> End Stream
+        <i class="bi bi-stop-fill me-1"></i> Stop
       </button>
     </div>
   </div>

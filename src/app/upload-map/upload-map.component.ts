@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MapStorageService } from '../services/map-storage.service';
 import { ImageCroppedEvent } from 'ngx-image-cropper';
@@ -8,40 +8,35 @@ import { ImageCroppedEvent } from 'ngx-image-cropper';
   templateUrl: './upload-map.component.html',
   styleUrls: ['./upload-map.component.scss'],
 })
-export class UploadMapComponent {
+export class UploadMapComponent implements OnInit {
+  mapChoice: 'yes' | 'no' | null = 'yes';
+  robotMapSrc: string = 'assets/FINAL-1-1.png'; // static map for "Yes"
   croppedImage: string | null = null;
-  errorMessage = '';
   showCropper = false;
   imageChangedEvent: any = '';
+  errorMessage = '';
 
   constructor(
-    private router: Router,
     private mapStorage: MapStorageService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private router: Router
   ) {}
+
+  ngOnInit() {
+    // For "No", map will be uploaded by user. No need to load anything for "Yes" since it's static
+  }
+
+  openCropperForUpload() {
+    this.showCropper = false;
+    document.getElementById('fileInput')?.click();
+  }
 
   onFileSelected(event: any) {
     const file = event.target.files[0];
     if (!file) return;
-    // event.target.value = null;
-    const img = new Image();
-    const objectURL = URL.createObjectURL(file);
-    img.onload = () => {
-      console.log('width', img.width);
-      // if (img.width < 2000 || img.height < 2000) {
-      //   this.errorMessage = 'Image must be at least 2000 x 2000 pixels!';
-      //   this.showCropper = false;
-      //   URL.revokeObjectURL(objectURL);
-      //   return;
-      // }
-      this.errorMessage = '';
-      this.showCropper = true;
-      this.imageChangedEvent = event;
-      URL.revokeObjectURL(objectURL);
-    };
-
-    img.src = objectURL;
-    // this.cdr.markForCheck();
+    this.imageChangedEvent = event;
+    this.showCropper = true;
+    this.errorMessage = '';
   }
 
   imageCropped(event: ImageCroppedEvent) {
@@ -64,41 +59,27 @@ export class UploadMapComponent {
 
     const response = await fetch(this.croppedImage);
     const blob = await response.blob();
-    const file = new File([blob], 'mapImage' + '.' + blob.type.split('/')[1], {
+
+    const newHash = await this.hashBlob(blob);
+    const storedHash = localStorage.getItem('mapHash');
+
+    if (storedHash && storedHash === newHash) {
+      this.errorMessage = 'This map is already saved.';
+    }
+
+    const file = new File([blob], 'mainMap.png', {
       type: blob.type,
       lastModified: Date.now(),
     });
-    const img = new Image();
-    const objectURL = URL.createObjectURL(file);
+    await this.mapStorage.saveMap('mainMap', file);
+    localStorage.setItem('mapHash', newHash);
 
-    img.onload = async () => {
-      // if (img.width < 2000 || img.height < 2000) {
-      //   this.errorMessage = 'Image must be at least 2000 x 2000 pixels!';
-      //   this.croppedImage = null;
-      //   return;
-      // }
+    // Update preview
+    this.robotMapSrc = URL.createObjectURL(blob);
+    this.showCropper = false;
+    this.croppedImage = null;
 
-      const newHash = await this.hashBlob(blob);
-      const storedHash = localStorage.getItem('mapHash');
-
-      if (storedHash && storedHash === newHash) {
-        this.router.navigate(['/localmap']);
-        return;
-      }
-
-      localStorage.removeItem('geoFences');
-      localStorage.setItem('mapHash', newHash);
-
-      const file = new File([blob], 'mainMap.png', {
-        type: blob.type,
-        lastModified: Date.now(),
-      });
-
-      await this.mapStorage.saveMap('mainMap', file);
-      this.router.navigate(['/localmap']);
-    };
-
-    img.src = objectURL;
-    // this.cdr.markForCheck();
+    // Navigate to localmap route
+    this.router.navigate(['/localmap']);
   }
 }

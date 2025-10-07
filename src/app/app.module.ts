@@ -22,6 +22,7 @@ import { IPComponent } from './ip/ip.component';
 import { RobotComponent } from './robot/robot.component';
 import { DetailsComponent } from './details/details.component';
 import { NgSelectModule } from '@ng-select/ng-select';
+import { DashboardComponent } from './dashboard/dashboard.component';
 @NgModule({
   declarations: [
     AppComponent,
@@ -34,6 +35,7 @@ import { NgSelectModule } from '@ng-select/ng-select';
     IPComponent,
     RobotComponent,
     DetailsComponent,
+    DashboardComponent,
   ],
   imports: [
     BrowserModule,

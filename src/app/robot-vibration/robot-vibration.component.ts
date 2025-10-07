@@ -25,6 +25,7 @@ export class RobotVibrationComponent implements OnInit {
 
   public chartOptions: ChartOptions<'line'> = {
     responsive: true,
+    maintainAspectRatio: false,
     animation: { duration: 0 },
     scales: {
       x: {

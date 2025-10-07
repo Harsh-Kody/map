@@ -1,12 +1,37 @@
-.vibration-container {
+:host {
+  display: block;
   width: 100%;
   height: 100%;
 }
 
-canvas {
-  width: 100% !important;
-  height: 100% !important;
+.vibration-container {
+  width: 100%;
+  height: 100%;
   background: #f8f9fa;
-  border-radius: 6px;
-}
+  border-radius: 4px;
+  padding: 0.5rem;
+  position: relative;
   
+  canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+    background: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+  }
+}
+
+/* Chart.js specific fixes */
+:host ::ng-deep {
+  .chart-container {
+    position: relative;
+    width: 100% !important;
+    height: 100% !important;
+    
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+  }
+}

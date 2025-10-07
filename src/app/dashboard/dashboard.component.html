@@ -1,0 +1,136 @@
+<div class="dashboard-wrapper container-fluid">
+  <div class="row g-3">
+    <!-- Map Controls -->
+    <div class="col-xl-3 col-lg-4">
+      <div class="card dashboard-card h-100">
+        <div class="card-header d-flex align-items-center">
+          <i class="bi bi-geo-alt me-2"></i>
+          <span>Map Controls</span>
+        </div>
+        <div class="card-body d-flex flex-column">
+          <div class="map-actions">
+            <div *ngIf="!robotMapSrc" class="d-grid gap-2">
+              <button
+                class="btn btn-primary btn-action"
+                (click)="openMapModal('add')"
+              >
+                <i class="bi bi-plus-circle me-2"></i>Add Map
+              </button>
+            </div>
+
+            <div *ngIf="robotMapSrc" class="d-grid gap-2">
+              <button
+                class="btn btn-outline-primary btn-action"
+                (click)="openMapModal('edit')"
+              >
+                <i class="bi bi-pencil me-2"></i>Edit Map
+              </button>
+              <button
+                class="btn btn-outline-danger btn-action"
+                (click)="deleteMap()"
+              >
+                <i class="bi bi-trash me-2"></i>Delete Map
+              </button>
+              <button
+                class="btn btn-outline-success btn-action"
+                (click)="openMapModal('view')"
+              >
+                <i class="bi bi-eye me-2"></i>View Map
+              </button>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-dark btn-navigation mt-auto"
+            (click)="navigateLocalMap()"
+          >
+            <i class="bi bi-compass me-2"></i>Go to Local Map
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot Status -->
+    <div class="col-xl-5 col-lg-8">
+      <div class="card dashboard-card h-100">
+        <div class="card-header d-flex align-items-center">
+          <i class="bi bi-robot me-2"></i>
+          <span>Robot Status</span>
+        </div>
+        <div
+          class="card-body d-flex justify-content-center align-items-center"
+          style="min-height: 300px"
+        >
+          <app-robot></app-robot>
+        </div>
+      </div>
+    </div>
+
+    <!-- Robot Vibration -->
+    <div class="col-xl-4 col-lg-12">
+      <div class="card dashboard-card h-100">
+        <div class="card-header d-flex align-items-center">
+          <i class="bi bi-graph-up me-2"></i>
+          <span>Robot Vibration</span>
+        </div>
+        <div class="card-body p-0">
+          <app-robot-vibration></app-robot-vibration>
+        </div>
+      </div>
+    </div>
+
+    <!-- Full Width Robot Map -->
+    <!-- <div class="col-12">
+      <div class="card dashboard-card">
+        <div class="card-header d-flex align-items-center">
+          <i class="bi bi-pin-map me-2"></i>
+          <span>Robot Map</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="full-map-container">
+            <canvas #mapCanvas></canvas>
+          </div>
+        </div>
+      </div>
+    </div> -->
+  </div>
+</div>
+
+<!-- Map Modal (keep your existing modal) -->
+<ng-template #mapModal let-modal>
+  <div class="modal-header">
+    <h5 class="modal-title text-capitalize">{{ modalMode }} Map</h5>
+    <button type="button" class="btn-close" (click)="modal.dismiss()"></button>
+  </div>
+  <div class="modal-body">
+    <div *ngIf="modalMode === 'view' && robotMapSrc">
+      <img [src]="robotMapSrc" class="img-fluid rounded" alt="Robot Map" />
+    </div>
+
+    <div *ngIf="modalMode !== 'view'">
+      <input
+        type="file"
+        class="form-control mb-2"
+        (change)="onFileSelected($event)"
+      />
+      <div *ngIf="showCropper" class="mt-2">
+        <image-cropper
+          [imageChangedEvent]="imageChangedEvent"
+          [maintainAspectRatio]="true"
+          format="png"
+          (imageCropped)="imageCropped($event)"
+        >
+        </image-cropper>
+      </div>
+      <div class="text-danger mt-2">{{ errorMessage }}</div>
+    </div>
+  </div>
+  <div class="modal-footer" *ngIf="modalMode !== 'view'">
+    <button type="button" class="btn btn-secondary" (click)="modal.dismiss()">
+      Cancel
+    </button>
+    <button type="button" class="btn btn-primary" (click)="onUpload(modal)">
+      Save
+    </button>
+  </div>
+</ng-template>

@@ -1,0 +1,143 @@
+.dashboard-wrapper {
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: #f8f9fa;
+}
+
+.dashboard-card {
+  background: #ffffff;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  
+  .card-header {
+    background: #2c5aa0;
+    color: #ffffff;
+    border-bottom: none;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    
+    i {
+      font-size: 1rem;
+    }
+  }
+  
+  .card-body {
+    padding: 1rem;
+  }
+}
+
+/* Map Actions */
+.map-actions {
+  .btn-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    
+    i {
+      font-size: 0.9rem;
+    }
+  }
+}
+
+.btn-navigation {
+  margin-top: auto;
+  width: 100%;
+}
+
+/* Full Map Container */
+.full-map-container {
+  width: 100%;
+  height: 300px;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+}
+
+/* Component Containers */
+:host ::ng-deep {
+  /* Robot Component Container */
+  app-robot {
+    display: block;
+    width: 100%;
+    height: 300px;
+    
+    .robot-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+  }
+  
+  /* Vibration Component Container */
+  app-robot-vibration {
+    display: block;
+    width: 100%;
+    height: 250px;
+    
+    .vibration-container {
+      width: 100%;
+      height: 100%;
+      background: #f8f9fa;
+      border-radius: 4px;
+      padding: 0.5rem;
+      
+      canvas {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+      }
+    }
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1199px) {
+  :host ::ng-deep {
+    app-robot {
+      height: 250px;
+    }
+    
+    app-robot-vibration {
+      height: 200px;
+    }
+  }
+  
+  .full-map-container {
+    height: 250px;
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-wrapper {
+    padding: 1rem;
+  }
+  
+  :host ::ng-deep {
+    app-robot {
+      height: 200px;
+    }
+    
+    app-robot-vibration {
+      height: 180px;
+    }
+  }
+  
+  .full-map-container {
+    height: 200px;
+  }
+}

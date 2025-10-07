@@ -1,29 +1,4 @@
-<div class="container-fluid py-3">
-  <div class="row g-3">
-    <!-- Robot Map -->
-    <div class="col-lg-6 col-md-12">
-      <div class="card shadow-sm h-100">
-        <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">Robot Map</h5>
-        </div>
-        <div class="card-body d-flex justify-content-center align-items-center">
-          <div class="map-container">
-            <canvas #mapCanvas></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Vibration Graph -->
-    <div class="col-lg-6 col-md-12">
-      <div class="card shadow-sm h-100">
-        <div class="card-header bg-success text-white">
-          <h5 class="mb-0">Vibration Intensity</h5>
-        </div>
-        <div class="card-body">
-          <app-robot-vibration></app-robot-vibration>
-        </div>
-      </div>
-    </div>
-  </div>
+<!-- Inside app-robot component -->
+<div class="robot-container">
+  <canvas #mapCanvas></canvas>
 </div>
