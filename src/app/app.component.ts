@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
-import { MapStorageService } from './services/map-storage.service';
+// import { MapStorageService } from './services/map-storage.service';
 import { Router } from '@angular/router';
+import { MapStorageService } from './_services/map-storage.service';
 
 @Component({
   selector: 'app-root',
@@ -12,6 +13,7 @@ export class AppComponent {
 
   async ngOnInit() {
     // const map = await this.mapStorage.getMap('mainMap');
+    // console.log('MAp');
     // if (map) {
     //   this.router.navigate(['/localmap']);
     // } else {

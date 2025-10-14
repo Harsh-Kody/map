@@ -1,0 +1,79 @@
+<div class="d-flex justify-content-center align-items-center vh-100 bg-light">
+    <div class="card shadow-lg p-4" style="max-width: 400px; width: 100%">
+        <h2 class="text-center mb-4">Login</h2>
+
+        <form (ngSubmit)="login()" [formGroup]="loginForm" #Submit="ngForm">
+            <!-- Username -->
+            <div class="mb-3">
+                <label for="username" class="form-label">User Name</label>
+                <input type="text" class="form-control" id="username" placeholder="Enter your username"
+                    formControlName="username" />
+                @if (Submit.submitted) {
+                <div class="text-danger mt-1 small">
+                    @if(hasError("username","required")){ *UserName is required }
+                </div>
+                }
+            </div>
+
+            <!-- Password -->
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" placeholder="Enter your password"
+                    formControlName="password" />
+                @if (Submit.submitted) {
+                <div class="text-danger mt-1 small">
+                    @if(hasError("password","required")){ *Password is required }
+                </div>
+                }
+            </div>
+
+            <!-- Submit -->
+            <div class="d-grid">
+                <button class="btn btn-success" type="submit">Login</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<ng-template #AddIPModal let-modal>
+    <div class="modal-header">
+        <h5 class="modal-title">Change Server IP</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+            (click)="modal.close('Close click')" (click)="onCancel()"></button>
+    </div>
+    <form [formGroup]="IPForm" #ipFormDirective="ngForm" (ngSubmit)="IPFormSubmit()">
+        <div class="modal-body">
+            <div class="row">
+                <div>
+                    <div class="col-sm-12">
+                        <div class="form-group mb-2">
+                            <span class="mdi mdi-link-variant font-size-100 text-primary alert-icon"></span>
+                            <label class="col-form-label">
+                                Enter IP<span class="text-danger">*</span></label>
+                            <input appAutofocus type="text" class="form-control" formControlName="ip" />
+                            @if (ipFormDirective.submitted) { @if(hasErrorInIP('ip',
+                            'required')) {
+                            <div class="text-danger">IP is required</div>
+                            }@else if(hasErrorInIP('ip', 'maxlength')) {
+                            <div class="text-danger">
+                                IP cannot be greater than 100 characters
+                            </div>
+                            } }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" class="btn btn-dark waves-effect waves-light w-sm btn-sm" data-bs-dismiss="modal"
+                (click)="onCancel()">
+                Close
+            </button>
+
+            <button type="submit" class="btn btn-primary waves-effect waves-light w-sm btn-sm">
+                Save
+            </button>
+        </div>
+    </form>
+</ng-template>

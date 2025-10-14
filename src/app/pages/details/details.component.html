@@ -1,0 +1,96 @@
+<div class="container-fluid py-4 stream-dashboard">
+  <!-- Header -->
+  <div
+    class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"
+  >
+    <h5 class="fw-semibold text-primary mb-0">
+      <i class="bi bi-broadcast-pin me-2"></i> Live Stream Dashboard
+    </h5>
+  </div>
+
+  <!-- Filters + Actions -->
+  <div class="row g-3 align-items-end mb-4">
+    <!-- Filter -->
+    <div class="col-lg-4 col-md-6">
+      <label
+        for="filterSelect"
+        class="form-label fw-semibold text-secondary mb-2"
+      >
+        Filter by Type
+      </label>
+      <ng-select
+        class="custom-ng-select"
+        [items]="filterOptions"
+        bindLabel="label"
+        bindValue="value"
+        [multiple]="true"
+        placeholder="Select filters"
+        [(ngModel)]="selectedFilters"
+        (change)="onFilterChange()"
+        [closeOnSelect]="false"
+      >
+      </ng-select>
+    </div>
+
+    <!-- Buttons -->
+    <div class="col-lg-4 col-md-6 d-flex gap-2 mt-3 mt-md-0">
+      <button
+        class="btn btn-success btn-sm flex-fill d-flex align-items-center justify-content-center gap-1"
+        (click)="startStream()"
+        [disabled]="!selectedFilters.length"
+      >
+        <i class="bi bi-play-fill small"></i> Start
+      </button>
+
+      <button
+        class="btn btn-danger btn-sm flex-fill d-flex align-items-center justify-content-center gap-1"
+        (click)="endStream()"
+        [disabled]="!selectedFilters.length"
+      >
+        <i class="bi bi-stop-fill small"></i> Stop
+      </button>
+    </div>
+  </div>
+
+  <!-- Stream Data -->
+  @if (isStreamStarted) {
+  <div class="row g-4">
+    @for (filter of selectedFilters; track $index) { @if (latestData[filter]) {
+    <div class="col-xl-4 col-lg-6 col-md-12">
+      <div class="card shadow-sm border-0 rounded-3 data-card h-100">
+        <div
+          class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center border-0 rounded-top-3"
+        >
+          <span class="text-primary text-uppercase small">{{ filter }}</span>
+          <button
+            class="btn btn-sm btn-outline-primary px-2 py-0"
+            [disabled]="copiedMessageId === filter"
+            (mousedown)="copyToClipBoard($event, filter)"
+          >
+            <i class="bi bi-clipboard small"></i>
+            {{ copiedMessageId === filter ? copyButtonText : "Copy" }}
+          </button>
+        </div>
+        <div class="card-body">
+          <pre class="json-box mb-0">{{ latestData[filter] | json }}</pre>
+        </div>
+      </div>
+    </div>
+    } @else {
+    <div class="col-md-12">
+      <div class="alert alert-warning text-center rounded-3 shadow-sm mb-0">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        No Data Found for <strong>{{ filter }}</strong>
+      </div>
+    </div>
+    } }
+  </div>
+  } @else {
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-activity fs-2 mb-2 d-block"></i>
+    <p class="mb-0 small">
+      Stream not started yet. Select filters and click “Start”.
+    </p>
+  </div>
+  }
+</div>
