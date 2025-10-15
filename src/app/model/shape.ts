@@ -1,5 +1,5 @@
 export interface Shape {
-  mode: 'free' | 'circle' | 'square' | 'triangle' | null;
+  mode?: 'free' | 'circle' | 'square' | 'triangle' | null;
   points?: { x: number; y: number }[]; // for free
   startX?: number; // for shapes
   startY?: number;
@@ -13,9 +13,10 @@ export interface Shape {
   vertices?: { x: number; y: number }[];
   isDraggable?: boolean;
   isResizable?: boolean;
-  draggable ?: any
-  resizable ?: any
-  topX?:any
-  topY?:any
-  color?:any
+  draggable?: any;
+  resizable?: any;
+  topX?: any;
+  topY?: any;
+  color?: any;
+  isRestricted?: any;
 }

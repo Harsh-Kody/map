@@ -6,15 +6,20 @@ import { HomeComponent } from './home/home.component';
 import { LocalmapComponent } from './localmap/localmap.component';
 import { UploadMapComponent } from './upload-map/upload-map.component';
 import { DashboardComponent } from './dashboard/dashboard.component';
+import { LoginComponent } from '../account/login/login.component';
+import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
+import { RobotVibrationComponent } from './robot-vibration/robot-vibration.component';
 
 const routes: Routes = [
-  { path: '', component: DashboardComponent },
+  { path: '', component: LoginComponent },
   { path: 'details', component: DetailsComponent },
   { path: 'upload-map', component: UploadMapComponent },
   { path: 'localmap', component: LocalmapComponent },
   { path: 'graphs', component: RobotComponent },
   { path: 'dashboard', component: DashboardComponent },
-  { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
+  { path: 'robot-speed', component: RobotSpeedComponent },
+  { path: 'robot-intensity', component: RobotVibrationComponent },
+  // { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
 ];
 
 @NgModule({

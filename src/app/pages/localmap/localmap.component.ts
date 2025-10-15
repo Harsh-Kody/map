@@ -39,6 +39,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private readonly MAX_SCALE = 2;
   private nameChange: boolean = false;
   private isPanning = false;
+  private isRestricated = false;
   private originalPoints: { x: number; y: number }[] = [];
   isDrawingShape = false;
   private fittedScale = 1;
@@ -65,6 +66,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   mapImageSrc: string | null = null;
   private readonly HANDLE_TOLERANCE = 10;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
+  private lastFenceState: { [robotId: string]: string | null } = {};
   showPath = false;
   robotPath: { x: number; y: number }[] = [];
   selectedFence: Shape | null = null;
@@ -113,10 +115,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     private router: Router,
     private changeDetector: ChangeDetectorRef
   ) {}
-
+  public closestPedestrianDistance: number | null = null;
+  public closestPedestrian: any = null;
+  togglePadestrian: boolean = false;
+  toggleAura: boolean = false;
   private shapeToCopy: Shape | null = null;
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
+  closestPedestrians: any;
   lastX = 0;
   lastY = 0;
   lastZ = 0;
@@ -201,7 +207,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     // Robot location subscription
     this.subs.push(
       this.localMapService.getRobotLocation().subscribe((robot) => {
-        console.log('connected robot location');
         const time = Date.now();
         const vibration = this.quaternionIntensity(
           robot.qx,
@@ -236,7 +241,24 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         } else {
           this.robots.push(robot);
         }
+        if (this.pedestrians.length > 0) {
+          let minDistance = Infinity;
+          let closestPed = null;
 
+          for (const ped of this.pedestrians) {
+            const dx = robot.x - ped.x;
+            const dy = robot.y - ped.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestPed = ped;
+            }
+          }
+
+          this.closestPedestrianDistance = minDistance;
+          this.closestPedestrian = closestPed;
+        }
         this.redraw();
       })
     );
@@ -309,6 +331,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       // triangleBase: [2, Validators.required],
       // triangleHeight: [1, Validators.required],
       color: ['#ff0000', Validators.required],
+      isRestricted: [false],
       isDrag: [true],
       isResize: [true],
     });
@@ -359,6 +382,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       color: '#0000ff',
       isDrag: true,
       isResize: true,
+      isRestricted: false,
     });
     this.modalService.open(this.geofenceToolModal, { backdrop: 'static' });
   }
@@ -390,8 +414,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.redraw(); // redraw immediately to show grid
     } else {
       const data = this.mapForm.value;
-      console.log('data', data);
-      console.log('Form not valid');
     }
   }
   ngAfterViewInit(): void {
@@ -416,7 +438,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     canvas.addEventListener('mousemove', (event) => {
       this.clampOffsets();
       this.coord = this.getImageCoords(event);
-      // console.log('X', this.coord.x, 'Y', this.coord.y);
     });
     canvas.addEventListener('resize', () => {
       this.fitImageToCanvas();
@@ -730,7 +751,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         let newEndX = newStartX + width;
         let newEndY = newStartY + height;
 
-        // ✅shift entire square back inside if outside
         if (newStartX < 0) {
           newStartX = 0;
           newEndX = width;
@@ -787,46 +807,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       y: Math.max(0, Math.min(y, maxY)),
     };
   }
-  private clampSquareSize(
-    shape: Shape,
-    fixed: { x: number; y: number },
-    moving: { x: number; y: number }
-  ) {
-    const MIN_SIZE = 20 / Math.max(this.scale, 0.001);
-
-    // Delta from fixed to mouse
-    const dx = moving.x - fixed.x;
-    const dy = moving.y - fixed.y;
-
-    // Square size is max of abs(dx/dy)
-    let size = Math.max(Math.abs(dx), Math.abs(dy));
-    if (size < MIN_SIZE) size = MIN_SIZE;
-
-    // Decide directions (preserve quadrant)
-    const dirX = dx >= 0 ? 1 : -1;
-    const dirY = dy >= 0 ? 1 : -1;
-
-    // New moving corner
-    const moveX = fixed.x + dirX * size;
-    const moveY = fixed.y + dirY * size;
-
-    // Now assign without re-normalizing
-    if (fixed.x <= moveX) {
-      shape.startX = fixed.x;
-      shape.endX = moveX;
-    } else {
-      shape.startX = moveX;
-      shape.endX = fixed.x;
-    }
-
-    if (fixed.y <= moveY) {
-      shape.startY = fixed.y;
-      shape.endY = moveY;
-    } else {
-      shape.startY = moveY;
-      shape.endY = fixed.y;
-    }
-  }
 
   private getShapeCorners(shape: Shape): { x: number; y: number }[] {
     if (shape.mode === 'square') {
@@ -850,15 +830,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
 
-    // CSS/canvas coordinates
     const cssX = event.clientX - rect.left;
     const cssY = event.clientY - rect.top;
 
-    // convert to image pixel coordinates
     let imgX = (cssX - this.offsetX) / this.scale;
     let imgY = (cssY - this.offsetY) / this.scale;
 
-    // reverse Y axis so top-left = (0,0)
     imgY = this.mapImage.nativeElement.naturalHeight - imgY;
 
     return { x: imgX, y: imgY };
@@ -871,13 +848,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const canvasY = event.clientY - rect.top;
     let imgX = (canvasX - this.offsetX) / this.scale;
     let imgY = (canvasY - this.offsetY) / this.scale;
-    // reverse Y axis
     imgY = this.mapImage.nativeElement.naturalHeight - imgY;
     return { x: imgX, y: imgY };
   }
 
   private toCanvasCoords(imgX: number, imgY: number) {
-    // reverse Y axis for canvas rendering
     const canvasX = imgX * this.scale + this.offsetX;
     const canvasY =
       (this.mapImage.nativeElement.naturalHeight - imgY) * this.scale +
@@ -941,6 +916,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDraggable: this.mapForm.controls['isDrag'].value,
       isResizable: this.mapForm.controls['isResize'].value,
       color: this.mapForm.controls['color'].value,
+      isRestricted: this.mapForm.controls['isRestricted'].value,
     };
     if (!this.doesShapeOverlap(newShape)) {
       console.log('callled ');
@@ -1067,6 +1043,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (event.button !== 0) return;
     if (this.pendingTool) {
       const tool = this.pendingTool;
+      console.log('tool', tool);
       let newShape: Shape | null = null;
 
       if (tool.shapeMode === 'square') {
@@ -1081,6 +1058,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           isDraggable: tool.isDrag,
           isResizable: tool.isResize,
           name: tool.fenceName,
+          isRestricted: tool.isRestricted,
         };
         this.gridEnabled = false;
         this.normalizeSquare(newShape);
@@ -1102,7 +1080,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             alert('Fence is outside the boundary!');
           } else {
             console.log('pushedd in dif points');
+
             this.polygons.push(newShape);
+            console.log('Polygons', this.polygons);
             localStorage.setItem('geoFences', JSON.stringify(this.polygons));
             this.redraw();
           }
@@ -1235,6 +1215,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         endY: y,
         isDraggable: this.mapForm.value.isDrag,
         isResizable: this.mapForm.value.isResize,
+        isRestricted: this.mapForm.controls['isRestricted'].value,
       } as Shape;
       this.isDrawingShape = true;
       return;
@@ -1482,10 +1463,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const p = this.toCanvasCoords(this.robotPath[i].x, this.robotPath[i].y);
         this.ctx.lineTo(p.x, p.y);
       }
-
-      this.ctx.strokeStyle = 'blue';
-      this.ctx.lineWidth = 2;
-      this.ctx.stroke();
+      ctx.strokeStyle = '#ff8c1a'; // orange color similar to your image
+      ctx.lineWidth = 1.5; // thinner line
+      ctx.lineJoin = 'round'; // smoother corners
+      ctx.lineCap = 'round'; // rounded path ends
+      ctx.globalAlpha = 0.9;
       this.ctx.restore();
     }
     this.restrictionPoints.forEach((p) => {
@@ -1577,6 +1559,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       endY: snappedY + 50,
       isDraggable: this.mapForm.value.isDrag,
       isResizable: this.mapForm.value.isResize,
+      isRestricted: this.mapForm.controls['isRestricted'].value,
     };
   }
 
@@ -1941,37 +1924,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     ctx.restore();
   }
-  // finishShape(newShape: Shape) {
-  //   this.isEditing = false;
-  //   this.mapForm.reset({
-  //     fenceName: '',
-  //     isDrag: true,
-  //     isResize: true,
-  //   });
-
-  //   const modalRef = this.modalService.open(this.fenceModal, {
-  //     backdrop: 'static',
-  //   });
-
-  //   modalRef.result
-  //     .then(() => {
-  //       const fenceName = this.mapForm.controls['fenceName'].value;
-  //       const isDrag = this.mapForm.controls['isDrag'].value;
-  //       const isResize = this.mapForm.controls['isResize'].value;
-
-  //       if (this.isDuplicateName(fenceName)) {
-  //         return;
-  //       }
-  //       newShape.name = fenceName;
-  //       newShape.isDraggable = isDrag;
-  //       newShape.isResizable = isResize;
-  //       this.polygons.push(newShape);
-  //       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-  //       // this.carSocket.updateFences(this.polygons);
-  //       this.redraw();
-  //     })
-  //     .catch(() => {});
-  // }
 
   public isDuplicateName(
     name?: string | null,
@@ -2006,10 +1958,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   toggleMarkers() {
     this.toggleMarker = !this.toggleMarker;
-    // if (condition) {
-
-    // }
   }
+
+  togglePadestrians() {
+    this.togglePadestrian = !this.togglePadestrian;
+  }
+
+  toggleAuras() {
+    this.toggleAura = !this.toggleAura;
+  }
+
   togglePath() {
     this.showPath = !this.showPath;
     if (!this.showPath) {
@@ -2173,6 +2131,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDrag: this.selectedFence.isDraggable || false,
       isResize: this.selectedFence.isResizable || false,
       color: this.selectedFence.color || '#ff0000',
+      isRestricated: this.selectedFence.isRestricted,
     });
 
     const modalRef = this.modalService.open(this.geofenceToolModal, {
@@ -2185,15 +2144,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const isDrag = this.mapForm.controls['isDrag'].value;
         const isResize = this.mapForm.controls['isResize'].value;
         const color = this.mapForm.controls['color'].value;
-
+        const isRestricated = this.mapForm.controls['isRestricted'].value;
         if (this.isDuplicateName(fenceName, this.selectedFence)) {
           return;
         }
-
-        this.selectedFence!.name = fenceName;
-        this.selectedFence!.isDraggable = isDrag;
-        this.selectedFence!.isResizable = isResize;
-        this.selectedFence!.color = color;
+        if (this.selectedFence) {
+          this.selectedFence.name = fenceName;
+          this.selectedFence.isDraggable = isDrag;
+          this.selectedFence.isResizable = isResize;
+          this.selectedFence.color = color;
+          this.selectedFence.isRestricted = isRestricated;
+        }
         const idx = this.polygons.indexOf(this.selectedFence!);
 
         if (this.doesShapeOverlap(this.selectedFence!, idx)) {
@@ -2419,60 +2380,94 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const yawRad = (yaw * Math.PI) / 180;
     const visibleRange = range * this.scale * 2;
 
-    // Gradient fill (bright blue near robot, transparent at edge)
-    const gradient = ctx.createRadialGradient(x, y, 0, x, y, visibleRange);
-    gradient.addColorStop(0, 'rgba(0, 128, 255, 0.25)');
-    gradient.addColorStop(1, 'rgba(0, 128, 255, 0)');
+    // ---- FOV cone (as-is) ----
+    if (this.toggleAura) {
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, visibleRange);
+      gradient.addColorStop(0, 'rgba(0, 128, 255, 0.25)');
+      gradient.addColorStop(1, 'rgba(0, 128, 255, 0)');
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.arc(
+        x,
+        y,
+        visibleRange,
+        yawRad - fovRad / 2,
+        yawRad + fovRad / 2,
+        false
+      );
+      ctx.closePath();
+
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+
+    // ---- Direction arrow/line ----
+    const arrowLength = 30; // Adjust as needed
+    const arrowX = x + Math.cos(yawRad) * arrowLength;
+    const arrowY = y + Math.sin(yawRad) * arrowLength;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.arc(
-      x,
-      y,
-      visibleRange,
-      yawRad - fovRad / 2,
-      yawRad + fovRad / 2,
-      false
-    );
-    ctx.closePath();
+    ctx.lineTo(arrowX, arrowY);
+    ctx.strokeStyle = 'blue';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    ctx.fillStyle = gradient;
+    // Optional: draw arrowhead
+    const headLength = 6;
+    const angle = yawRad;
+
+    ctx.beginPath();
+    ctx.moveTo(arrowX, arrowY);
+    ctx.lineTo(
+      arrowX - headLength * Math.cos(angle - Math.PI / 6),
+      arrowY - headLength * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      arrowX - headLength * Math.cos(angle + Math.PI / 6),
+      arrowY - headLength * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.lineTo(arrowX, arrowY);
+    ctx.fillStyle = 'blue';
     ctx.fill();
   }
+
   private drawPedestrians() {
     if (!this.pedestrians || this.pedestrians.length === 0) return;
-    const ctx = this.ctx!;
-    const size = 10;
+    if (this.togglePadestrian) {
+      const ctx = this.ctx!;
+      const size = 10;
+      for (const p of this.pedestrians) {
+        const { x, y } = this.toCanvasCoords(p.x, p.y); // <-- transform coordinates
+        ctx.beginPath();
+        ctx.arc(x, y - size / 2, size / 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'green';
+        ctx.fill();
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-    for (const p of this.pedestrians) {
-      const { x, y } = this.toCanvasCoords(p.x, p.y); // <-- transform coordinates
-      ctx.beginPath();
-      ctx.arc(x, y - size / 2, size / 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = 'green';
-      ctx.fill();
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+        // body
+        ctx.beginPath();
+        ctx.moveTo(x, y - size / 4);
+        ctx.lineTo(x, y + size / 2);
+        ctx.stroke();
 
-      // body
-      ctx.beginPath();
-      ctx.moveTo(x, y - size / 4);
-      ctx.lineTo(x, y + size / 2);
-      ctx.stroke();
+        // arms
+        ctx.beginPath();
+        ctx.moveTo(x - size / 2, y);
+        ctx.lineTo(x + size / 2, y);
+        ctx.stroke();
 
-      // arms
-      ctx.beginPath();
-      ctx.moveTo(x - size / 2, y);
-      ctx.lineTo(x + size / 2, y);
-      ctx.stroke();
-
-      // legs
-      ctx.beginPath();
-      ctx.moveTo(x, y + size / 2);
-      ctx.lineTo(x - size / 3, y + size);
-      ctx.moveTo(x, y + size / 2);
-      ctx.lineTo(x + size / 3, y + size);
-      ctx.stroke();
+        // legs
+        ctx.beginPath();
+        ctx.moveTo(x, y + size / 2);
+        ctx.lineTo(x - size / 3, y + size);
+        ctx.moveTo(x, y + size / 2);
+        ctx.lineTo(x + size / 3, y + size);
+        ctx.stroke();
+      }
     }
   }
 
@@ -2488,8 +2483,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.lineTo(pt.x, pt.y);
     }
 
-    ctx.strokeStyle = 'blue';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ff8c1a'; // orange color similar to your image
+    ctx.lineWidth = 1.5; // thinner line
+    ctx.lineJoin = 'round'; // smoother corners
+    ctx.lineCap = 'round'; // rounded path ends
+    ctx.globalAlpha = 0.9; // slight transparency like in the screenshot
+
     ctx.stroke();
   }
   private drawRobots() {
@@ -2501,54 +2500,33 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     for (const r of this.robots) {
       const { x, y } = this.toCanvasCoords(r.x, r.y);
-      let insideFence: { color: string; name: string } | null = null; // store color if inside
+      let insideFence: {
+        color: string;
+        name: string;
+        isRestricted?: boolean;
+      } | null = null;
 
       for (const gf of geofences) {
-        if (gf.mode === 'circle' && gf.radius) {
-          if (this.isPointInCircle({ x: r.x, y: r.y }, gf)) {
-            insideFence = {
-              color: gf.color || 'red',
-              name: gf.name || 'Unnamed Fence',
-            };
-            break;
-          }
-        } else if (gf.mode === 'square') {
-          if (this.isPointInSquare({ x: r.x, y: r.y }, gf)) {
-            insideFence = {
-              color: gf.color || 'red',
-              name: gf.name || 'Unnamed Fence',
-            };
-            break;
-          }
-        } else if (gf.mode === 'triangle') {
-          if (this.isPointInSquare({ x: r.x, y: r.y }, gf)) {
-            insideFence = {
-              color: gf.color || 'red',
-              name: gf.name || 'Unnamed Fence',
-            };
-            break;
-          }
-        } else if (gf.mode === 'free' && gf.points?.length > 2) {
-          if (this.isPointInPolygon({ x: r.x, y: r.y }, gf.points)) {
-            insideFence = {
-              color: gf.color || 'red',
-              name: gf.name || 'Unnamed Fence',
-            };
-            break;
-          }
-        } else if (gf.points?.length > 2) {
-          // fallback: generic polygon
-          if (this.isPointInPolygon({ x: r.x, y: r.y }, gf.points)) {
-            insideFence = {
-              color: gf.color || 'red',
-              name: gf.name || 'Unnamed Fence',
-            };
-            break;
-          }
+        const point = { x: r.x, y: r.y };
+        let inFence = false;
+        if (gf.mode === 'square') inFence = this.isPointInSquare(point, gf);
+        else if (gf.mode === 'free' && gf.points?.length > 2)
+          inFence = this.isPointInPolygon(point, gf.points);
+        else if (gf.points?.length > 2)
+          inFence = this.isPointInPolygon(point, gf.points);
+
+        if (inFence) {
+          console.log('1');
+          insideFence = {
+            color: gf.color || 'red',
+            name: gf.name || 'Unnamed Fence',
+            isRestricted: gf.isRestricted || false,
+          };
+          break;
         }
       }
 
-      // draw robot
+      // 🔸 draw robot
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fillStyle = insideFence ? insideFence.color : 'blue';
@@ -2556,13 +2534,30 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.strokeStyle = 'black';
       ctx.fill();
       ctx.stroke();
+
       if (insideFence) {
         ctx.font = '12px Arial';
         ctx.fillStyle = 'black';
         ctx.textAlign = 'center';
-        ctx.fillText(insideFence.name, x, y - radius - 5); // name above robot
+        ctx.fillText(insideFence.name, x, y - radius - 5);
       }
-      // draw camera FOV
+
+      // 🔸 check entry alert
+      const currentFence = insideFence?.isRestricted ? insideFence.name : null;
+      const previousFence = this.lastFenceState[r.id] || null;
+      // console.log('Current Fence ', currentFence);
+      // console.log('Prevous Fence', previousFence);
+      if (currentFence && currentFence !== previousFence) {
+        // robot just entered a restricted geofence
+        console.log('2');
+        alert(
+          `⚠️ Robot ${r.name || r.id} entered restricted area: ${currentFence}`
+        );
+      }
+
+      this.lastFenceState[r.id] = currentFence;
+
+      // draw FOV
       const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
       const canvasYaw = -yaw;
       this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
@@ -2581,17 +2576,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     );
   }
 
-  private isPointInTriangle(
-    point: { x: number; y: number },
-    tri: { startX: number; startY: number; endX: number; endY: number }
-  ): boolean {
-    // construct triangle vertices (example: right triangle)
-    const p0 = { x: tri.startX, y: tri.startY };
-    const p1 = { x: tri.endX, y: tri.startY };
-    const p2 = { x: (tri.startX + tri.endX) / 2, y: tri.endY };
-
-    return this.isPointInPolygon(point, [p0, p1, p2]);
-  }
   zoomIn() {
     this.zoomAtImageCenter(1.2);
   }
@@ -2621,25 +2605,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     // this.clampOffsets();
     this.redraw();
   }
-  private getImageBoundsCanvas(): {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-  } {
-    const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
 
-    const img = this.mapImage.nativeElement;
-    const imgWidth = img.naturalWidth * this.scale;
-    const imgHeight = img.naturalHeight * this.scale;
-
-    const minX = this.offsetX;
-    const minY = this.offsetY;
-    const maxX = this.offsetX + imgWidth;
-    const maxY = this.offsetY + imgHeight;
-
-    return { minX, maxX, minY, maxY };
-  }
   onSubmit(modal: any) {
     if (this.mapForm.valid && !this.isDuplicate) {
       modal.close();

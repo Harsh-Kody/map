@@ -1,17 +1,27 @@
 .map-container {
-  display: flex;
-  flex-direction: column; /* stack controls above canvas */
-  align-items: center;
   width: 100%;
   height: 100vh;
-  // background: #f5f5f5;
-  padding-top: 10px; /* optional spacing above canvas */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
+
+/* Layout for controls and canvas side-by-side */
+.canvas-layout {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 30px; /* adjust spacing between controls and canvas */
+  flex: 1;
+  padding: 20px;
+}
+
 .controls {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px; /* space between buttons and canvas */
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
 }
 
 .controls button {
@@ -39,11 +49,11 @@
 
 /* Canvas wrapper to center the canvas */
 .canvas-wrapper {
-  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 100%;
+  flex-grow: 1;
+  height: 100%;
 }
 
 #map-canvas {

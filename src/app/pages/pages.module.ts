@@ -16,6 +16,7 @@ import { LocalmapComponent } from './localmap/localmap.component';
 import { RouterModule } from '@angular/router';
 import { LayoutsModule } from '../layouts/layouts.module';
 import { DashboardComponent } from './dashboard/dashboard.component';
+import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
 
 @NgModule({
   declarations: [
@@ -27,6 +28,7 @@ import { DashboardComponent } from './dashboard/dashboard.component';
     HomeComponent,
     DetailsComponent,
     DashboardComponent,
+    RobotSpeedComponent,
   ],
   imports: [
     CommonModule,

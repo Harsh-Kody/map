@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 // import { MapStorageService } from './services/map-storage.service';
 import { Router } from '@angular/router';
 import { MapStorageService } from './_services/map-storage.service';
@@ -8,10 +8,10 @@ import { MapStorageService } from './_services/map-storage.service';
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   constructor(private mapStorage: MapStorageService, private router: Router) {}
 
-  async ngOnInit() {
+  ngOnInit() {
     // const map = await this.mapStorage.getMap('mainMap');
     // console.log('MAp');
     // if (map) {

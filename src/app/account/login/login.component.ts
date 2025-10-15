@@ -94,7 +94,7 @@ export class LoginComponent {
           console.log(res);
           localStorage.setItem('userToken', res.access_token);
           this.isLogin = true;
-          this.router.navigateByUrl('/');
+          this.router.navigateByUrl('/dashboard');
         },
         error: (err) => {
           console.log(err);

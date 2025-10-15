@@ -25,6 +25,7 @@ export class LocalmapService {
     }
 
     const ip = localStorage.getItem('_I');
+    console.log('IP', ip);
     if (!ip) return;
 
     const decodedIP = atob(ip);
@@ -38,7 +39,6 @@ export class LocalmapService {
 
       // Send pending filters if any
       if (this.pendingStartFilters.length > 0) {
-        console.log(this.pendingStartFilters, 'pending');
         this.startFilters(this.pendingStartFilters);
         this.pendingStartFilters = [];
       }
@@ -110,8 +110,6 @@ export class LocalmapService {
 
   /** Start listening for specific filters */
   public startFilters(filters: string[]) {
-    console.log('filter', filters);
-
     if (!this.connected || this.socket?.readyState !== WebSocket.OPEN) {
       // Merge into pending (avoid duplicates)
       this.pendingStartFilters = Array.from(
@@ -126,7 +124,6 @@ export class LocalmapService {
     if (newFilters.length > 0) {
       this.socket.send(JSON.stringify({ start: newFilters }));
       this.activeFilters.push(...newFilters);
-      console.log('▶️ Started filters:', newFilters);
     }
   }
 
@@ -140,7 +137,6 @@ export class LocalmapService {
       this.activeFilters = this.activeFilters.filter(
         (f) => !toStop.includes(f)
       );
-      console.log('⏹️ Stopped filters:', toStop);
     }
   }
 

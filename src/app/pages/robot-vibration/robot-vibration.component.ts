@@ -41,7 +41,6 @@ export class RobotVibrationComponent implements OnInit {
     },
   };
 
-  // ✅ Class properties
   private prevQuat: { qx: number; qy: number; qz: number; qw: number } | null =
     null;
   private prevPos: { x: number; y: number; z: number } | null = null;
@@ -52,9 +51,6 @@ export class RobotVibrationComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    // this.localMapService.connect();
-
-    // Start only FullPose for vibration calculation
     this.localMapService.startFilters(['FullPose']);
 
     this.subs.push(

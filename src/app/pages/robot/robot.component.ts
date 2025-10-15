@@ -50,7 +50,6 @@ export class RobotComponent implements OnInit, AfterViewInit, OnDestroy {
     this.subs.push(
       this.mapService.getPedestrians().subscribe((data) => {
         this.pedestrian = data;
-        console.log('👣 Pedestrians from RobotComponent:', data);
         this.cdr.markForCheck();
       })
     );

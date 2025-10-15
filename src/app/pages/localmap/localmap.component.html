@@ -1,8 +1,7 @@
 <div class="map-container">
-  <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
-  <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
-
-  <!-- <div
+  <!-- <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas> -->
+  <div class="canvas-layout">
+    <!-- <div
     class="vibration-graph"
     style="width: 100%; height: 250px; margin-top: 10px"
   >
@@ -15,86 +14,93 @@
     </canvas>
   </div> -->
 
-  <div class="controls">
-    @if (!isDrawingShape) {
-    <button (click)="startAddGeofence()">Add Geofence</button>
-    }
+    <div class="controls">
+      @if (!isDrawingShape) {
+      <button (click)="startAddGeofence()">Add Geofence</button>
+      }
 
-    <button (click)="zoomIn()">+</button>
-    <button (click)="zoomOut()">-</button>
-    <button (click)="resetView()">Reset</button>
-    <button (click)="clearGeofences()">Clear Geofences</button>
-    <button (click)="toggleDeleteMode()">
-      {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
-    </button>
-    <button (click)="togglePath()">
-      {{ showPath ? "Show path" : "Hide path" }}
-    </button>
-    <button (click)="toggleMarkers()">
-      {{ toggleMarker ? "Show Markers" : "Hide Markers" }}
-    </button>
-    <div *ngIf="shapeMode === 'free' && isDrawingShape">
-      <button
-        (click)="undoLastFreePoint()"
-        [disabled]="currentPolygon.length <= 1"
-      >
-        Undo
+      <button (click)="zoomIn()">Zoom In (+)</button>
+      <button (click)="zoomOut()">Zoom In (-)</button>
+      <button (click)="resetView()">Reset</button>
+      <button (click)="clearGeofences()">Clear Geofences</button>
+      <button (click)="toggleDeleteMode()">
+        {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
       </button>
-      <button (click)="finalizeShape()">Finalize Free Shape</button>
-    </div>
-    <!-- <div *ngIf="hoveredShape"> -->
-    <button (click)="copyGeofence()">Copy</button>
-    <!-- @if (currentShape && shapeMode !== 'free') {
+      <button (click)="togglePath()">
+        {{ showPath ? "Hide path" : "Show path" }}
+      </button>
+      <button (click)="toggleMarkers()">
+        {{ toggleMarker ? "Hide Markers" : "Show Markers" }}
+      </button>
+      <button (click)="togglePadestrians()">
+        {{ togglePadestrian ? "Hide Padestrians" : "Show Padestrian" }}
+      </button>
+      <button (click)="toggleAuras()">
+        {{ toggleAura ? "Hide Aura" : "Show Aura" }}
+      </button>
+      <div *ngIf="shapeMode === 'free' && isDrawingShape">
+        <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">
+          Undo
+        </button>
+        <button (click)="finalizeShape()">Finalize Free Shape</button>
+      </div>
+      <!-- <div *ngIf="hoveredShape"> -->
+      <button (click)="copyGeofence()">Copy</button>
+      <!-- @if (currentShape && shapeMode !== 'free') {
 
     <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
       Finalize Shape
     </button>
     } -->
-    <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
-    <button (click)="toggleGrid()">
-      {{ gridEnabled ? "Hide Grid" : "Show Grid" }}
-    </button>
+      <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
+      <button (click)="toggleGrid()">
+        {{ gridEnabled ? "Hide Grid" : "Show Grid" }}
+      </button>
 
-    <button routerLink="/graphs">Robot-vibration</button>
-  </div>
+      <button routerLink="/robot-intensity">Robot-Vibration</button>
+      <button routerLink="/robot-speed">Robot-Speed</button>
+    </div>
 
-  <div class="fence-log">
-    <!-- <h3>Fence Entry Log</h3> -->
-    <ul>
-      <li *ngFor="let log of fenceLog">
-        {{ log.robot }} → FenceName - '{{ log.fenceName }}' at
-        {{ log.time | date : "shortTime" }}
-      </li>
-    </ul>
+    <div class="canvas-wrapper">
+      <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
+      <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
+    </div>
   </div>
-  <div class="shape-options" *ngIf="shapeMode !== 'free'">
-    <ng-container [ngSwitch]="shapeMode">
-      <div *ngSwitchCase="'circle'">
-        <label
-          >Radius: <input type="number" [(ngModel)]="circleRadius"
-        /></label>
-      </div>
-      <div *ngSwitchCase="'square'">
-        <label
-          >Side length: <input type="number" [(ngModel)]="squareSize"
-        /></label>
-      </div>
-      <!-- <div *ngSwitchCase="'triangle'">
+</div>
+
+<div class="fence-log">
+  <!-- <h3>Fence Entry Log</h3> -->
+  <ul>
+    <li *ngFor="let log of fenceLog">
+      {{ log.robot }} → FenceName - '{{ log.fenceName }}' at
+      {{ log.time | date : "shortTime" }}
+    </li>
+  </ul>
+</div>
+
+<div class="shape-options" *ngIf="shapeMode !== 'free'">
+  <ng-container [ngSwitch]="shapeMode">
+    <div *ngSwitchCase="'circle'">
+      <label>Radius: <input type="number" [(ngModel)]="circleRadius" /></label>
+    </div>
+    <div *ngSwitchCase="'square'">
+      <label>Side length: <input type="number" [(ngModel)]="squareSize" /></label>
+    </div>
+    <!-- <div *ngSwitchCase="'triangle'">
         <label>Base: <input type="number" [(ngModel)]="triangleBase" /></label
         ><br />
         <label
           >Height: <input type="number" [(ngModel)]="triangleHeight"
         /></label>
       </div> -->
-    </ng-container>
-  </div>
+  </ng-container>
 </div>
+
 <div class="robot-info">
   <h5><b>Robot Coords</b></h5>
   <div *ngIf="robots.length > 0; else noRobot">
     <div *ngFor="let r of robots">
-      <strong>{{ r.name || "Robot " }}</strong
-      ><br />
+      <strong>{{ r.name || "Robot " }}</strong><br />
       X: {{ r.x | number : "1.2-2" }} <br />
       Y: {{ r.y | number : "1.2-2" }} <br />
       Z: {{ r.z }} <br />
@@ -120,91 +126,19 @@
   <p>
     Detected Pedestrians: <strong>{{ pedestrians.length }}</strong>
   </p>
+  <div *ngIf="closestPedestrianDistance !== null">
+    Closest pedestrian:
+    {{ closestPedestrianDistance | number: '1.2-2' }} m
+  </div>
 </div>
-<!-- <ng-template #fenceModal let-modal>
-  <form [formGroup]="mapForm" (ngSubmit)="onSubmit(modal)">
-    <div class="modal-header">
-      <h5 class="modal-title">Create Geofence</h5>
-      <button
-        type="button"
-        class="btn-close"
-        (click)="modal.dismiss()"
-      ></button>
-    </div>
 
-    <div class="modal-body">
-      <div class="mb-3">
-        <label>Fence Name</label>
-        <input type="text" class="form-control" formControlName="fenceName" />
-      </div>
-
-      <div class="mb-3">
-        <label>Select Shape</label>
-        <select class="form-select" formControlName="shapeMode">
-          <option value="circle">Circle</option>
-          <option value="square">Square</option>
-          <option value="triangle">Triangle</option>
-          <option value="free">Free</option>
-        </select>
-      </div>
-
-      <div class="mb-3">
-        <label>Select Color</label>
-        <div class="d-flex gap-2">
-          <button
-            type="button"
-            *ngFor="let c of colors"
-            class="color-btn"
-            [style.background]="c"
-            [class.selected]="mapForm.value.color === c"
-            (click)="mapForm.patchValue({ color: c })"
-          ></button>
-        </div>
-      </div>
-
-      <div class="form-check">
-        <input
-          type="checkbox"
-          class="form-check-input"
-          id="drag"
-          formControlName="isDrag"
-        />
-        <label class="form-check-label" for="drag">Draggable</label>
-      </div>
-      <div class="form-check">
-        <input
-          type="checkbox"
-          class="form-check-input"
-          id="resize"
-          formControlName="isResize"
-        />
-        <label class="form-check-label" for="resize">Resizable</label>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-secondary" (click)="modal.dismiss()">
-        Cancel
-      </button>
-      <button class="btn btn-primary" type="submit">Create</button>
-    </div>
-  </form>
-</ng-template> -->
 <ng-template #geofenceToolModal let-modal>
-  <form
-    [formGroup]="mapForm"
-    #mapFormDirective="ngForm"
-    (ngSubmit)="onToolSubmit(modal)"
-  >
+  <form [formGroup]="mapForm" #mapFormDirective="ngForm" (ngSubmit)="onToolSubmit(modal)">
     <div class="modal-header">
       <h5 class="modal-title">
         {{ isEditing ? "Edit ffence" : "Create Fence" }}
       </h5>
-      <button
-        type="button"
-        class="btn-close"
-        (click)="modal.dismiss()"
-      ></button>
+      <button type="button" class="btn-close" (click)="modal.dismiss()"></button>
     </div>
 
     <div class="modal-body">
@@ -235,11 +169,7 @@
 
       <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'square'">
         <label>Side Length</label>
-        <input
-          type="number"
-          class="form-control"
-          formControlName="squareSize"
-        />
+        <input type="number" class="form-control" formControlName="squareSize" />
         @if (mapFormDirective.submitted) { @if
         (hasError('squareSize','required')) {
         <div class="text-danger">Size is required</div>
@@ -273,14 +203,8 @@
       <div class="mb-3">
         <label>Select Color</label>
         <div class="color-palette">
-          <button
-            type="button"
-            *ngFor="let c of colors"
-            class="color-btn"
-            [style.background]="c"
-            [class.selected]="mapForm.value.color === c"
-            (click)="mapForm.patchValue({ color: c })"
-          >
+          <button type="button" *ngFor="let c of colors" class="color-btn" [style.background]="c"
+            [class.selected]="mapForm.value.color === c" (click)="mapForm.patchValue({ color: c })">
             <span *ngIf="mapForm.value.color === c" class="checkmark">✓</span>
           </button>
         </div>
@@ -288,22 +212,16 @@
 
       <!-- Draggable / Resizable -->
       <div class="form-check">
-        <input
-          type="checkbox"
-          class="form-check-input"
-          id="drag"
-          formControlName="isDrag"
-        />
+        <input type="checkbox" class="form-check-input" id="drag" formControlName="isDrag" />
         <label class="form-check-label" for="drag">Draggable</label>
       </div>
       <div class="form-check">
-        <input
-          type="checkbox"
-          class="form-check-input"
-          id="resize"
-          formControlName="isResize"
-        />
+        <input type="checkbox" class="form-check-input" id="resize" formControlName="isResize" />
         <label class="form-check-label" for="resize">Resizable</label>
+      </div>
+      <div class="form-check">
+        <input type="checkbox" class="form-check-input" id="restrict" formControlName="isRestricted" />
+        <label class="form-check-label" for="restrict">Restricted</label>
       </div>
     </div>
 
