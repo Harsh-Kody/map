@@ -16,6 +16,7 @@ import { NgSelectModule } from '@ng-select/ng-select';
 import { AuthGuard } from './_auth/auth.guard';
 import { RouterModule } from '@angular/router';
 import { LayoutsModule } from './layouts/layouts.module';
+import { SharedModule } from './shared/shared.module';
 @NgModule({
   declarations: [AppComponent],
   imports: [
@@ -28,6 +29,7 @@ import { LayoutsModule } from './layouts/layouts.module';
     ImageCropperModule,
     NgChartsModule,
     NgSelectModule,
+    SharedModule,
   ],
   providers: [
     provideHttpClient(withInterceptorsFromDi()),

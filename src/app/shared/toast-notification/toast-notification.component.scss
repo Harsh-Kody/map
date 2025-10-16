@@ -1,0 +1,85 @@
+.toast-container {
+  // position: fixed;
+  bottom: 15px;
+  right: 15px;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column-reverse; /* stack bottom to top */
+  gap: 6px;
+  pointer-events: none;
+  height: 40vh;
+  overflow-y: auto;
+  // margin-right: -15px;
+}
+
+.toast-box {
+  position: relative;
+  // background: #8d92ec;
+ 
+  padding: 6px 10px;
+  /*smallerpadding*/border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  cursor: pointer;
+  font-size: 12px;
+  /*smallertext*/min-width: 160px;
+  max-width: 220px;
+  pointer-events: auto;
+  line-height: 1.3;
+  animation: fadeIn 0.2s ease, fadeOut 0.4s ease 4.6s forwards;
+  -webkit-animation: fadeIn 0.2s ease, fadeOut 0.4s ease 4.6s forwards;
+}
+.toast-box h6{  font-size: 12px; margin: 0 0 5px; }
+.toast-box p{  font-size: 10px; margin: 0;  
+  display: block;
+  display: -webkit-box; 
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis; }
+
+.close-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.incident, .incident h6 {
+  background: #7FFFD4;
+  color: #000;
+}
+
+.weapon, .weapon h6 {
+  background: #FF7F50;
+  color: #000;
+}
+
+.authorized, .authorized h6 {
+  background: #7FFF00;
+  color: #000;
+}
+
+.unauthorized, .unauthorized h6 {
+  background: #FF0000;
+  color: #fff;
+}
+
+.blacklisted, .blacklisted h6 {
+  background: #FF7F50;
+  color: #000;
+}
+
+.orangered, .orangered h6 {
+  background: #FF4500;
+  color: #fff;
+}
+
+// .rebeccapurple {
+//   background: #663399 !important;
+// }

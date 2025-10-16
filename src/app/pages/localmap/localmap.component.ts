@@ -17,6 +17,7 @@ import { MapStorageService } from '../../_services/map-storage.service';
 import { RobotLocation } from '../../model/RobotLocation';
 import { Shape } from '../../model/shape';
 import { Subscription } from 'rxjs';
+import { ToastNotificationService } from '../../shared/toast-notification/toast-notification.service';
 @Component({
   selector: 'app-localmap',
   templateUrl: './localmap.component.html',
@@ -49,6 +50,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   currentShape: Shape | null = null;
   circleRadius: number = 100;
   squareSize: number = 140;
+  notifications: any[] = [];
   // triangleBase: number = 200;
   // triangleHeight: number = 140;
   private lastMouseDownPos = { x: 0, y: 0 };
@@ -113,7 +115,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     private modalService: NgbModal,
     private formBuilder: FormBuilder,
     private router: Router,
-    private changeDetector: ChangeDetectorRef
+    private changeDetector: ChangeDetectorRef,
+    private toastService: ToastNotificationService
   ) {}
   public closestPedestrianDistance: number | null = null;
   public closestPedestrian: any = null;
@@ -302,7 +305,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.redraw();
       })
     );
-
+    this.toastService.notifications$.subscribe((data) => {
+      this.notifications = data;
+      console.log('notifications', this.notifications);
+    });
     this.changeDetector.markForCheck();
   }
 
@@ -326,10 +332,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.mapForm = this.formBuilder.group({
       fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
       shapeMode: [null, [Validators.required]],
-      // circleRadius: [3, Validators.required],
       squareSize: [200, Validators.required],
-      // triangleBase: [2, Validators.required],
-      // triangleHeight: [1, Validators.required],
       color: ['#ff0000', Validators.required],
       isRestricted: [false],
       isDrag: [true],
@@ -337,9 +340,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     });
   }
 
-  // private isImageFitted(): boolean {
-  //   return this.scale === this.fittedScale;
-  // }
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Delete' || event.key === 'Del') {
@@ -2133,7 +2133,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       color: this.selectedFence.color || '#ff0000',
       isRestricated: this.selectedFence.isRestricted,
     });
-
+    console.log('mapForm patch value', this.mapForm.value);
     const modalRef = this.modalService.open(this.geofenceToolModal, {
       backdrop: 'static',
     });
@@ -2516,7 +2516,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           inFence = this.isPointInPolygon(point, gf.points);
 
         if (inFence) {
-          console.log('1');
           insideFence = {
             color: gf.color || 'red',
             name: gf.name || 'Unnamed Fence',
@@ -2549,10 +2548,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       // console.log('Prevous Fence', previousFence);
       if (currentFence && currentFence !== previousFence) {
         // robot just entered a restricted geofence
-        console.log('2');
-        alert(
+        this.toastService.addNotification(
           `⚠️ Robot ${r.name || r.id} entered restricted area: ${currentFence}`
         );
+        // alert(
+        //   `⚠️ Robot ${r.name || r.id} entered restricted area: ${currentFence}`
+        // );
       }
 
       this.lastFenceState[r.id] = currentFence;

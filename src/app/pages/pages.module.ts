@@ -17,6 +17,8 @@ import { RouterModule } from '@angular/router';
 import { LayoutsModule } from '../layouts/layouts.module';
 import { DashboardComponent } from './dashboard/dashboard.component';
 import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
+import { SharedModule } from '../shared/shared.module';
+import { ToastNotificationComponent } from '../shared/toast-notification/toast-notification.component';
 
 @NgModule({
   declarations: [
@@ -29,6 +31,7 @@ import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
     DetailsComponent,
     DashboardComponent,
     RobotSpeedComponent,
+    ToastNotificationComponent,
   ],
   imports: [
     CommonModule,
