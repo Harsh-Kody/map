@@ -1,11 +1,11 @@
 <!-- toast-notification.component.html -->
 <div class="toast-container">
   @for (toast of notifications; track toast.uuid) {
-  <div class="toast-box blacklisted">
+  <div class="toast-box " [ngClass]="toast.className">
     <button class="close-btn" (click)="dismiss(toast.uuid); $event.stopPropagation()">
       &times;
     </button>
-    <h6>{{ toast}}</h6>
+    <h6>{{ toast.message}}</h6>
   </div>
   }
 </div>

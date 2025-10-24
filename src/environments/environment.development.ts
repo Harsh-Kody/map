@@ -1,3 +1,3 @@
 export const environment = {
-  webServiceEndPointURL: 'http://192.168.0.102/v0',
+  webServiceEndPointURL: 'http://192.168.2.110/v0',
 };

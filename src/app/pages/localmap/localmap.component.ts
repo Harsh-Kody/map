@@ -9,7 +9,14 @@ import {
   ViewChild,
 } from '@angular/core';
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap';
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormBuilder,
+  FormGroup,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { Router } from '@angular/router';
 import { ChartConfiguration, ChartOptions } from 'chart.js';
 import { LocalmapService } from '../../_services/localmap.service';
@@ -80,7 +87,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private readonly WORLD_SCALE = 30.929;
   private ignoreNextClickAfterEdit = false;
   coord: any;
-  robots: any[] = [];
+  robots: RobotLocation[] = [];
   gridEnabled = false;
   gridSize = 10;
   lastFences: { [robotId: number]: string | null } = {};
@@ -109,15 +116,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   vibrationData: number[] = [];
   toggleMarker: boolean = false;
   private subs: Subscription[] = [];
-  constructor(
-    private localMapService: LocalmapService,
-    private mapStorage: MapStorageService,
-    private modalService: NgbModal,
-    private formBuilder: FormBuilder,
-    private router: Router,
-    private changeDetector: ChangeDetectorRef,
-    private toastService: ToastNotificationService
-  ) {}
+  private fenceTracking: {
+    [robotId: string]: {
+      [fenceName: string]: {
+        entryTime: string;
+        exitTime?: string;
+        durationMinutes?: any;
+      };
+    };
+  } = {};
+  private lastSafePosition: Record<string, { x: number; y: number }> = {};
   public closestPedestrianDistance: number | null = null;
   public closestPedestrian: any = null;
   togglePadestrian: boolean = false;
@@ -147,38 +155,71 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   copyMode: boolean = false;
   copiedShapeTemplate: Shape | null = null;
   lastQ = { qw: 0, qx: 0, qy: 0, qz: 0 };
-  // startAddGeofence() {
-  //   this.addingGeofence = true;
-  //   this.currentPolygon = [];
-  //   this.currentShape = null;
-  // }
+  private dwellTracking: {
+    [robotId: string]: {
+      [fenceName: string]: {
+        entryTime: string;
+        exitTime?: string;
+        dwellSeconds?: number;
+      }[];
+    };
+  } = {};
+  private restrictedPaths: { [robotId: string]: { x: number; y: number }[] } =
+    {};
+  private lastRobotPositions: {
+    [robotId: string]: { x: number; y: number; timestamp: number };
+  } = {};
+  private restrictedToastShown: Record<string, boolean> = {};
+  private restrictedReminderTimers: Record<string, any> = {};
+  private lastRestrictedEntryTime: Record<string, string> = {};
+  private violations: any[] = [];
+  private combinedTracking: {
+    [robotId: string]: {
+      [fenceName: string]: {
+        sessions: {
+          entryTime: string;
+          exitTime: string | null;
+          durationMinutes: number | null;
+        }[];
+        totalDwellMinutes: number;
+        violations: {
+          type: string;
+          time: string;
+          [key: string]: any;
+        }[];
+        totalViolationsCount?: number;
+      };
+    };
+  } = {};
 
-  // cancelGeofence() {
-  //   this.addingGeofence = false;
-  //   this.currentPolygon = [];
-  //   this.currentShape = null;
-  // }
+  private saveCombinedData() {
+    localStorage.setItem(
+      'robotFenceData',
+      JSON.stringify(this.combinedTracking)
+    );
+  }
 
-  // selectColor(color: string) {
-  //   this.selectedColor = color;
-  // }
+  minMaxSpeedValidator(): ValidatorFn {
+    return (controls: AbstractControl): ValidationErrors | null => {
+      const minSpeed = controls.get('minSpeed')?.value;
+      const maxSpeed = controls.get('maxSpeed')?.value;
 
-  // confirmGeofence() {
-  //   if (this.currentShape) {
-  //     this.currentShape.color = this.selectedColor;
-  //     this.polygons.push(this.currentShape);
-  //     this.currentShape = null;
-  //   } else if (this.currentPolygon.length > 0) {
-  //     this.polygons.push({
-  //       mode: 'free',
-  //       points: [...this.currentPolygon],
-  //       color: this.selectedColor, // <-- attach selected color
-  //     });
-  //     this.currentPolygon = [];
-  //   }
-  //   this.addingGeofence = false;
-  //   this.redraw();
-  // }
+      if (minSpeed != null && maxSpeed != null && maxSpeed < minSpeed) {
+        return { maxLessThanMin: true };
+      }
+      return null;
+    };
+  }
+
+  constructor(
+    private localMapService: LocalmapService,
+    private mapStorage: MapStorageService,
+    private modalService: NgbModal,
+    private formBuilder: FormBuilder,
+    private router: Router,
+    private changeDetector: ChangeDetectorRef,
+    private toastService: ToastNotificationService
+  ) {}
   selectShape(mode: 'free' | 'square') {
     this.shapeMode = mode;
     this.currentPolygon = [];
@@ -307,7 +348,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     );
     this.toastService.notifications$.subscribe((data) => {
       this.notifications = data;
-      console.log('notifications', this.notifications);
     });
     this.changeDetector.markForCheck();
   }
@@ -329,15 +369,28 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   createMapForm() {
-    this.mapForm = this.formBuilder.group({
-      fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
-      shapeMode: [null, [Validators.required]],
-      squareSize: [200, Validators.required],
-      color: ['#ff0000', Validators.required],
-      isRestricted: [false],
-      isDrag: [true],
-      isResize: [true],
-    });
+    this.mapForm = this.formBuilder.group(
+      {
+        fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
+        shapeMode: [null],
+        squareSize: [200, [Validators.required, Validators.min(100)]],
+        color: ['#ff0000', Validators.required],
+        isRestricted: [false],
+        isDrag: [true],
+        isResize: [true],
+        maxSpeed: [
+          null,
+          [Validators.required, Validators.max(10), Validators.min(0)],
+        ],
+        minSpeed: [
+          null,
+          [Validators.required, Validators.max(10), Validators.min(0)],
+        ],
+        speedLimit: [null, [Validators.required, Validators.max(7)]],
+        timeLimitMinutes: [null, [Validators.required]],
+      },
+      { validators: this.minMaxSpeedValidator() }
+    );
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -362,7 +415,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.polygons.splice(index, 1);
       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
     }
-
     // Clear selection
     this.selectedFence = null;
 
@@ -383,19 +435,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDrag: true,
       isResize: true,
       isRestricted: false,
+      minSpeed: 0,
+      maxSpeed: 10,
+      timeLimitMinutes: 2,
+      speedLimit: 0,
     });
     this.modalService.open(this.geofenceToolModal, { backdrop: 'static' });
   }
-  // renameGeofence(shape: Shape) {
-  //   this.editingShape = shape;
-  //   this.mapForm.patchValue({
-  //     fenceName: shape.name,
-  //     color: shape.color,
-  //     isDrag: shape.isDraggable,
-  //     isResize: shape.isResizable,
-  //   });
-  //   this.modalService.open(this.fenceModal, { backdrop: 'static' });
-  // }
+
   onToolSubmit(modal: any) {
     if (this.mapForm.valid) {
       if (this.editingShape) {
@@ -409,11 +456,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.pendingTool = this.mapForm.value;
         this.gridEnabled = true; // <--- ENABLE GRID HERE
       }
-
       modal.close();
       this.redraw(); // redraw immediately to show grid
     } else {
       const data = this.mapForm.value;
+      console.log('Not valid');
     }
   }
   ngAfterViewInit(): void {
@@ -888,7 +935,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   undoLastFreePoint() {
     if (this.currentPolygon.length > 0) {
       this.currentPolygon.pop();
-      console.log('current polygon', this.currentPolygon.length);
       this.redraw();
     }
   }
@@ -917,9 +963,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResizable: this.mapForm.controls['isResize'].value,
       color: this.mapForm.controls['color'].value,
       isRestricted: this.mapForm.controls['isRestricted'].value,
+      speedLimit: this.mapForm.controls['speedLimit'].value,
+      maxSpeed: this.mapForm.controls['maxSpeed'].value,
+      minSpeed: this.mapForm.controls['minSpeed'].value,
+      timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
     };
     if (!this.doesShapeOverlap(newShape)) {
-      console.log('callled ');
       this.polygons.push(newShape);
       localStorage.setItem('geoFences', JSON.stringify(this.polygons));
     } else {
@@ -935,20 +984,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   onMouseDown(event: MouseEvent) {
     if (event.target !== this.mapCanvas.nativeElement) return;
     const { x, y } = this.getTransformedCoords(event);
-    // if (event.button === 0) {
-    // if (!this.isImageFitted()) {
-    //   this.isPanning = true;
-    //   this.dragStart = {
-    //     x: event.clientX - this.offsetX,
-    //     y: event.clientY - this.offsetY,
-    //   };
-    //   this.mapCanvas.nativeElement.style.cursor = 'grabbing';
-    // } else {
-    //   this.isPanning = false;
-    //   this.mapCanvas.nativeElement.style.cursor = 'default';
-    // }
-    // }
-
     this.lastMouseDownPos = { x: event.clientX, y: event.clientY };
     this.dragDistance = 0;
     this.suppressClick = false;
@@ -960,7 +995,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
     if (this.copyMode) {
-      console.log('copy mode', this.copyMode);
       if (!this.copiedShapeTemplate) {
         // Step 1: select a shape to copy
         for (let i = this.polygons.length - 1; i >= 0; i--) {
@@ -1021,10 +1055,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         }
 
         // ✅ Save
-        console.log('pushed one point ');
         this.polygons.push(newShape);
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-
         this.copyMode = false;
         this.copiedShapeTemplate = null;
         this.redraw();
@@ -1043,9 +1075,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (event.button !== 0) return;
     if (this.pendingTool) {
       const tool = this.pendingTool;
-      console.log('tool', tool);
       let newShape: Shape | null = null;
-
+      const topLeft = { x, y };
+      const topRight = { x: x + tool.squareSize, y };
+      const bottomRight = { x: x + tool.squareSize, y: y + tool.squareSize };
+      const bottomLeft = { x, y: y + tool.squareSize };
       if (tool.shapeMode === 'square') {
         // Directly create fixed square on click
         newShape = {
@@ -1059,6 +1093,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           isResizable: tool.isResize,
           name: tool.fenceName,
           isRestricted: tool.isRestricted,
+          maxSpeed: tool.maxSpeed,
+          minSpeed: tool.minSpeed,
+          speedLimit: tool.speedLimit,
+          timeLimitMinutes: tool.timeLimitMinutes,
+          points: [topLeft, topRight, bottomRight, bottomLeft],
         };
         this.gridEnabled = false;
         this.normalizeSquare(newShape);
@@ -1079,10 +1118,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           if (!this.isShapeInsideCanvas(newShape)) {
             alert('Fence is outside the boundary!');
           } else {
-            console.log('pushedd in dif points');
-
             this.polygons.push(newShape);
-            console.log('Polygons', this.polygons);
             localStorage.setItem('geoFences', JSON.stringify(this.polygons));
             this.redraw();
           }
@@ -1216,6 +1252,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         isDraggable: this.mapForm.value.isDrag,
         isResizable: this.mapForm.value.isResize,
         isRestricted: this.mapForm.controls['isRestricted'].value,
+        maxSpeed: this.mapForm.controls['maxSpeed'].value,
+        minSpeed: this.mapForm.controls['minSpeed'].value,
+
+        speedLimit: this.mapForm.controls['speedLimit'].value,
+        timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
       } as Shape;
       this.isDrawingShape = true;
       return;
@@ -1560,6 +1601,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDraggable: this.mapForm.value.isDrag,
       isResizable: this.mapForm.value.isResize,
       isRestricted: this.mapForm.controls['isRestricted'].value,
+      maxSpeed: this.mapForm.controls['maxSpeed'].value,
+      minSpeed: this.mapForm.controls['minSpeed'].value,
+      speedLimit: this.mapForm.controls['speedLimit'].value,
+      timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
     };
   }
 
@@ -1693,7 +1738,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return; // don't save free polygon here, handled by dblclick
     }
     if (this.copiedShapeTemplate) {
-      console.log('copied shape', this.copiedShapeTemplate);
       const { x, y } = this.getTransformedCoords(event);
 
       const placedShape: Shape = JSON.parse(
@@ -1715,7 +1759,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         placedShape.endX! += dx;
         placedShape.endY! += dy;
       }
-      console.log('inside mouseup');
       if (!this.doesShapeOverlap(placedShape)) {
         this.polygons.push(placedShape);
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
@@ -1779,7 +1822,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       const idx = this.polygons.indexOf(this.draggingShape);
       if (this.doesShapeOverlap(this.draggingShape, idx)) {
-        this.originalCoordinates();
+        this.originalCoordinates(); // if fences are overlaps then it goes to the original coordinates
         alert('Invalid move: shape overlaps another!');
       } else {
         localStorage.setItem('geoFences', JSON.stringify(this.polygons));
@@ -1819,15 +1862,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return stored ? JSON.parse(stored) : [];
   }
 
-  private isPointInCircle(
-    point: { x: number; y: number },
-    circle: { startX: number; startY: number; radius: number }
-  ): boolean {
-    const dx = point.x - circle.startX;
-    const dy = point.y - circle.startY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    return dist <= circle.radius;
-  }
   private isPointInPolygon(
     point: { x: number; y: number },
     polygon: { x: number; y: number }[]
@@ -1992,18 +2026,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private shapeToPolygon(shape: Shape): { x: number; y: number }[] {
-    // if (shape.mode === 'circle' && shape.radius) {
-    //   const points: { x: number; y: number }[] = [];
-    //   const steps = 24; // higher = smoother circle
-    //   for (let i = 0; i < steps; i++) {
-    //     const angle = (2 * Math.PI * i) / steps;
-    //     points.push({
-    //       x: shape.startX! + shape.radius * Math.cos(angle),
-    //       y: shape.startY! + shape.radius * Math.sin(angle),
-    //     });
-    //   }
-    //   return points;
-    // } else
     if (shape.mode === 'square') {
       return [
         { x: shape.startX!, y: shape.startY! },
@@ -2011,15 +2033,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         { x: shape.endX!, y: shape.endY! },
         { x: shape.startX!, y: shape.endY! },
       ];
-    }
-    //  else if (shape.mode === 'triangle') {
-    //   return [
-    //     { x: shape.startX!, y: shape.startY! },
-    //     { x: shape.endX!, y: shape.startY! },
-    //     { x: (shape.startX! + shape.endX!) / 2, y: shape.endY! },
-    //   ];
-    // }
-    else if (shape.mode === 'free' && shape.points) {
+    } else if (shape.mode === 'free' && shape.points) {
       return shape.points;
     }
     return [];
@@ -2132,8 +2146,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResize: this.selectedFence.isResizable || false,
       color: this.selectedFence.color || '#ff0000',
       isRestricated: this.selectedFence.isRestricted,
+      shapeMode: this.selectedFence.shapeMode,
+      speedLimit: this.selectedFence.speedLimit,
+      timeLimitMinutes: this.selectedFence.timeLimitMinutes,
+      maxSpeed: this.selectedFence.maxSpeed,
+      minSpeed: this.selectedFence.minSpeed,
     });
-    console.log('mapForm patch value', this.mapForm.value);
     const modalRef = this.modalService.open(this.geofenceToolModal, {
       backdrop: 'static',
     });
@@ -2145,6 +2163,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const isResize = this.mapForm.controls['isResize'].value;
         const color = this.mapForm.controls['color'].value;
         const isRestricated = this.mapForm.controls['isRestricted'].value;
+        const maxSpeed = this.mapForm.controls['maxSpeed'].value;
+        const minSpeed = this.mapForm.controls['minSpeed'].value;
+
+        const shapeMode = this.mapForm.controls['shapeMode'].value;
+        const speedLimit = this.mapForm.controls['speedLimit'].value;
+        const timeLimitMinutes =
+          this.mapForm.controls['timeLimitMinutes'].value;
         if (this.isDuplicateName(fenceName, this.selectedFence)) {
           return;
         }
@@ -2154,6 +2179,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.selectedFence.isResizable = isResize;
           this.selectedFence.color = color;
           this.selectedFence.isRestricted = isRestricated;
+          this.selectedFence.minSpeed = minSpeed;
+          this.selectedFence.maxSpeed = maxSpeed;
+          this.selectedFence.shapeMode = shapeMode;
+          this.selectedFence.speedLimit = speedLimit;
+          this.selectedFence.timeLimitMinutes = timeLimitMinutes;
         }
         const idx = this.polygons.indexOf(this.selectedFence!);
 
@@ -2203,11 +2233,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     let x = 0,
       y = 0;
 
-    if (shape.mode === 'circle') {
-      const center = this.toCanvasCoords(shape.startX!, shape.startY!);
-      x = center.x;
-      y = center.y;
-    } else if (shape.mode === 'square' || shape.mode === 'triangle') {
+    if (shape.mode === 'square') {
       const p1 = this.toCanvasCoords(shape.startX!, shape.startY!);
       const p2 = this.toCanvasCoords(
         shape.endX ?? shape.startX!,
@@ -2280,7 +2306,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const siny_cosp = 2 * (qw * qz + qx * qy);
     const cosy_cosp = 1 - 2 * (qy * qy + qz * qz);
     let yaw = Math.atan2(siny_cosp, cosy_cosp);
-
     // Flip for canvas Y-down
     yaw = -yaw;
 
@@ -2319,10 +2344,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     ctx.drawImage(img, this.offsetX, this.offsetY, cssWidth, cssHeight);
   }
-  // @HostListener('contextmenu', ['$event'])
-  // onRightClick(event: MouseEvent) {
-  //   event.preventDefault();
-  // }
+
   private scaleCoords(x: number, y: number): { x: number; y: number } {
     const scale = 23.51; // scale from backend map to current map
     return {
@@ -2359,7 +2381,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       qy: Math.abs(qy - this.lastQ.qy),
       qz: Math.abs(qz - this.lastQ.qz),
     };
-
     // Save last quaternion
     this.lastQ = { qw, qx, qy, qz };
 
@@ -2403,14 +2424,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     // ---- Direction arrow/line ----
-    const arrowLength = 30; // Adjust as needed
+    const arrowLength = 20; // Adjust as needed
     const arrowX = x + Math.cos(yawRad) * arrowLength;
     const arrowY = y + Math.sin(yawRad) * arrowLength;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(arrowX, arrowY);
-    ctx.strokeStyle = 'blue';
+    ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -2429,7 +2450,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       arrowY - headLength * Math.sin(angle + Math.PI / 6)
     );
     ctx.lineTo(arrowX, arrowY);
-    ctx.fillStyle = 'blue';
+    ctx.fillStyle = 'black ';
     ctx.fill();
   }
 
@@ -2488,27 +2509,74 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     ctx.lineJoin = 'round'; // smoother corners
     ctx.lineCap = 'round'; // rounded path ends
     ctx.globalAlpha = 0.9; // slight transparency like in the screenshot
-
     ctx.stroke();
+  }
+  // Add this property to your class
+  private calculateSpeed(
+    robotId: string,
+    x: number,
+    y: number,
+    timestamp: string
+  ): number | null {
+    const currentTime = new Date(timestamp).getTime();
+    const last = this.lastRobotPositions[robotId];
+
+    if (last) {
+      const dx = x - last.x;
+      const dy = y - last.y;
+      const distance = Math.sqrt(dx * dx + dy * dy); // in meters (assuming map uses meters)
+      const dt = (currentTime - last.timestamp) / 1000; // seconds
+
+      if (dt > 0) {
+        const speed = distance / dt; // meters/second
+        this.lastRobotPositions[robotId] = { x, y, timestamp: currentTime };
+        return speed;
+      }
+    }
+
+    // store current if first time
+    this.lastRobotPositions[robotId] = { x, y, timestamp: currentTime };
+    return null;
   }
   private drawRobots() {
     if (!this.robots || this.robots.length === 0) return;
+
     const ctx = this.ctx!;
     const radius = 6;
-
     const geofences = this.getStoredGeofences();
+    const hasRecentViolation = (
+      fenceData: any,
+      type: string,
+      intervalMs: number = 10000
+    ) => {
+      const violationsOfType = fenceData.violations.filter(
+        (v: any) => v.type === type
+      );
+      if (violationsOfType.length === 0) return false;
+      const last = violationsOfType[violationsOfType.length - 1];
+      return Date.now() - new Date(last.time).getTime() < intervalMs;
+    };
 
     for (const r of this.robots) {
       const { x, y } = this.toCanvasCoords(r.x, r.y);
+      const robotId = r.id;
+      const timeStamp = new Date(r.timestamp).toISOString();
+
+      // Detect which fence robot is in
       let insideFence: {
         color: string;
         name: string;
         isRestricted?: boolean;
+        speedLimit?: number;
+        minSpeed?: number;
+        maxSpeed?: number;
+        timeLimitMinutes?: number;
       } | null = null;
 
       for (const gf of geofences) {
         const point = { x: r.x, y: r.y };
         let inFence = false;
+
         if (gf.mode === 'square') inFence = this.isPointInSquare(point, gf);
         else if (gf.mode === 'free' && gf.points?.length > 2)
           inFence = this.isPointInPolygon(point, gf.points);
@@ -2520,51 +2588,278 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             color: gf.color || 'red',
             name: gf.name || 'Unnamed Fence',
             isRestricted: gf.isRestricted || false,
+            minSpeed: gf.minSpeed,
+            maxSpeed: gf.maxSpeed,
+            speedLimit: gf.speedLimit,
+            timeLimitMinutes: gf.timeLimitMinutes,
           };
           break;
         }
       }
 
-      // 🔸 draw robot
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = insideFence ? insideFence.color : 'blue';
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'black';
-      ctx.fill();
-      ctx.stroke();
+      const currentFence = insideFence?.name || null;
+      const previousFence = this.lastFenceState[robotId] || null;
+      // --- EXIT logic ---
+      if (previousFence && previousFence !== currentFence) {
+        const fenceData = this.combinedTracking[robotId]?.[previousFence];
+        const lastSession =
+          fenceData?.sessions?.[fenceData.sessions.length - 1];
 
+        if (lastSession && !lastSession.exitTime) {
+          lastSession.exitTime = timeStamp;
+          const entry = new Date(lastSession.entryTime).getTime();
+          const exit = new Date(timeStamp).getTime();
+          const sessionMinutes = (exit - entry) / 60000;
+
+          lastSession.durationMinutes = +sessionMinutes.toFixed(2);
+          fenceData.totalDwellMinutes = +(
+            (fenceData.totalDwellMinutes || 0) + sessionMinutes
+          ).toFixed(2);
+
+          console.log(
+            `🚪 Robot ${robotId} exited ${previousFence} after ${lastSession.durationMinutes} min (total dwell: ${fenceData.totalDwellMinutes} min)`
+          );
+        }
+      }
+
+      // --- ENTRY logic ---
+      if (currentFence && previousFence !== currentFence) {
+        if (!this.combinedTracking[robotId])
+          this.combinedTracking[robotId] = {};
+
+        if (!this.combinedTracking[robotId][currentFence]) {
+          // First ever entry
+          this.combinedTracking[robotId][currentFence] = {
+            sessions: [],
+            totalDwellMinutes: 0,
+            violations: [],
+          };
+        }
+
+        // Always push a new session
+        this.combinedTracking[robotId][currentFence].sessions.push({
+          entryTime: timeStamp,
+          exitTime: null,
+          durationMinutes: null,
+        });
+      }
+
+      // --- Restricted zone logic ---
+      if (insideFence?.isRestricted) {
+        this.drawRestrictedRobot(ctx, x, y, radius, insideFence.color);
+        if (
+          !this.restrictedToastShown[robotId] ||
+          previousFence !== currentFence
+        ) {
+          this.toastService.addNotification({
+            title: 'Restricted Zone Alert',
+            message: `🚫 Robot ${r.name || robotId} entered restricted fence: ${
+              insideFence.name
+            }`,
+            className: 'error',
+            robotId,
+          });
+
+          const fenceData = this.combinedTracking[robotId][insideFence.name];
+          fenceData.violations.push({
+            type: 'restricted-entry',
+            time: timeStamp,
+          });
+
+          this.restrictedToastShown[robotId] = true;
+          // Reminder every 10s
+          if (this.restrictedReminderTimers[robotId]) {
+            clearInterval(this.restrictedReminderTimers[robotId]);
+          }
+          this.restrictedReminderTimers[robotId] = setInterval(() => {
+            if (this.lastFenceState[robotId] === insideFence!.name) {
+              this.toastService.addNotification({
+                title: 'Reminder',
+                message: `⚠️ Robot ${
+                  r.name || robotId
+                } is still inside restricted fence: ${insideFence!.name}`,
+                className: 'warning',
+                robotId,
+              });
+            }
+          }, 10000);
+        }
+        this.lastFenceState[robotId] = insideFence.name;
+        this.saveCombinedData();
+        // continue;
+      } else {
+        if (this.restrictedReminderTimers[robotId]) {
+          clearInterval(this.restrictedReminderTimers[robotId]);
+          delete this.restrictedReminderTimers[robotId];
+        }
+        this.restrictedToastShown[robotId] = false;
+      }
+      //  Time-based stay violation ---
       if (insideFence) {
-        ctx.font = '12px Arial';
-        ctx.fillStyle = 'black';
-        ctx.textAlign = 'center';
-        ctx.fillText(insideFence.name, x, y - radius - 5);
+        const fenceData = this.combinedTracking[robotId]?.[insideFence.name];
+        const lastSession =
+          fenceData?.sessions?.[fenceData.sessions.length - 1];
+        if (lastSession && !lastSession.exitTime) {
+          const entryTime = new Date(lastSession.entryTime).getTime();
+          const currentRobotTime = new Date(r.timestamp).getTime();
+          let minutesInside = (currentRobotTime - entryTime) / 60000;
+
+          // Fallback and clamp
+          if (isNaN(minutesInside) || minutesInside < 0) {
+            minutesInside = (Date.now() - entryTime) / 60000;
+          }
+          minutesInside = Math.max(0, minutesInside);
+          const allowedDuration = insideFence.timeLimitMinutes || 2;
+          console.log('Minutes Inside', minutesInside);
+          console.log('allow Duration', allowedDuration);
+          if (minutesInside > allowedDuration) {
+            if (!hasRecentViolation(fenceData, 'time-violation')) {
+              this.toastService.addNotification({
+                title: 'Duration Violation',
+                message: `⏱️ Robot ${r.name || robotId} has been inside ${
+                  insideFence.name
+                } for ${minutesInside.toFixed(1)} minutes .`,
+                className: 'duration',
+                robotId,
+              });
+
+              fenceData.violations.push({
+                type: 'time-violation',
+                limitMinutes: insideFence.timeLimitMinutes,
+                actualMinutes: +minutesInside.toFixed(2),
+                time: new Date().toISOString(),
+              });
+
+              this.saveCombinedData();
+            }
+          }
+        }
+      }
+      const calculatedSpeed = this.calculateSpeed(
+        robotId,
+        r.x,
+        r.y,
+        r.timestamp
+      );
+      if (calculatedSpeed !== null) {
+        r.speed = calculatedSpeed; // assign for later use
+      }
+      // --- 🚨 Speed violation detection (Min & Max) ---
+      if (insideFence && r.speed != null) {
+        const fenceData = this.combinedTracking[robotId]?.[insideFence.name];
+        if (fenceData) {
+          const now = Date.now();
+          const lastViolation =
+            fenceData.violations[fenceData.violations.length - 1];
+
+          // Check for MAX speed violation
+          if (insideFence.maxSpeed && r.speed > insideFence.maxSpeed) {
+            if (!hasRecentViolation(fenceData, 'max-speed-violation')) {
+              this.toastService.addNotification({
+                title: '🚨 Overspeed Violation',
+                message: `Robot ${
+                  r.name || robotId
+                } exceeded maximum speed in ${
+                  insideFence.name
+                }: ${r.speed.toFixed(2)} > ${insideFence.maxSpeed} m/s`,
+                className: 'error',
+                robotId,
+              });
+
+              fenceData.violations.push({
+                type: 'max-speed-violation',
+                actualSpeed: +r.speed.toFixed(2),
+                limit: insideFence.maxSpeed,
+                time: new Date().toISOString(),
+              });
+              this.saveCombinedData();
+            }
+          }
+
+          // Check for MIN speed violation
+          if (insideFence.minSpeed && r.speed < insideFence.minSpeed) {
+            if (!hasRecentViolation(fenceData, 'min-speed-violation')) {
+              this.toastService.addNotification({
+                title: '⚠️ Low Speed Violation',
+                message: `Robot ${r.name || robotId} is moving too slow in ${
+                  insideFence.name
+                }: ${r.speed.toFixed(2)} < ${insideFence.minSpeed} m/s`,
+                className: 'warning',
+                robotId,
+              });
+
+              fenceData.violations.push({
+                type: 'min-speed-violation',
+                actualSpeed: +r.speed.toFixed(2),
+                limit: insideFence.minSpeed,
+                time: new Date().toISOString(),
+              });
+
+              this.saveCombinedData();
+            }
+          }
+        }
       }
 
-      // 🔸 check entry alert
-      const currentFence = insideFence?.isRestricted ? insideFence.name : null;
-      const previousFence = this.lastFenceState[r.id] || null;
-      // console.log('Current Fence ', currentFence);
-      // console.log('Prevous Fence', previousFence);
-      if (currentFence && currentFence !== previousFence) {
-        // robot just entered a restricted geofence
-        this.toastService.addNotification(
-          `⚠️ Robot ${r.name || r.id} entered restricted area: ${currentFence}`
-        );
-        // alert(
-        //   `⚠️ Robot ${r.name || r.id} entered restricted area: ${currentFence}`
-        // );
-      }
+      // --- Draw robot normally ---
+      this.drawNormalRobot(ctx, x, y, radius, insideFence);
+      this.lastFenceState[robotId] = currentFence;
+      this.saveCombinedData();
 
-      this.lastFenceState[r.id] = currentFence;
-
-      // draw FOV
       const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
       const canvasYaw = -yaw;
       this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
     }
   }
 
+  private drawRestrictedRobot(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    color: string
+  ) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color || 'rgba(255,0,0,0.6)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'black';
+    ctx.stroke();
+    for (const r of this.robots) {
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
+    }
+  }
+
+  private drawNormalRobot(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    insideFence: any
+  ) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = insideFence ? insideFence.color : 'red';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'black';
+    ctx.stroke();
+
+    if (insideFence && !insideFence.isRestricted) {
+      ctx.font = '12px Arial';
+      ctx.fillStyle = 'black';
+      ctx.textAlign = 'center';
+      ctx.fillText(insideFence.name, x, y - radius - 5);
+    }
+    for (const r of this.robots) {
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
+    }
+  }
   private isPointInSquare(
     point: { x: number; y: number },
     square: { startX: number; startY: number; endX: number; endY: number }
@@ -2601,7 +2896,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     // adjust offsets so that image center stays fixed
     this.offsetX = cx - imgX * newScale;
     this.offsetY = cy - imgY * newScale;
-    console.log('new scale', newScale);
     this.scale = newScale;
     // this.clampOffsets();
     this.redraw();
@@ -2614,6 +2908,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       console.log('Not valid');
     }
   }
+
   resetForm() {
     this.isSubmit = false;
     this.mapForm.reset();

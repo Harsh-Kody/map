@@ -31,7 +31,7 @@ export class ToastNotificationService {
     this.notifications$.next([...this.notifications]);
 
     // Auto-remove after 5s
-    // setTimeout(() => this.removeNotification(notification.uuid), 5000);
+    setTimeout(() => this.removeNotification(notification.uuid), 5000);
   }
 
   removeNotification(uuid: string) {

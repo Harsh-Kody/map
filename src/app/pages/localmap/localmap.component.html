@@ -1,30 +1,18 @@
 <div class="map-container">
   <!-- <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas> -->
   <div class="canvas-layout">
-    <!-- <div
-    class="vibration-graph"
-    style="width: 100%; height: 250px; margin-top: 10px"
-  >
-    <canvas
-      baseChart
-      [data]="chartData"
-      [options]="chartOptions"
-      [type]="'line'"
-    >
-    </canvas>
-  </div> -->
+
 
     <div class="controls">
       @if (!isDrawingShape) {
       <button (click)="startAddGeofence()">Add Geofence</button>
       }
-
       <button (click)="zoomIn()">Zoom In (+)</button>
       <button (click)="zoomOut()">Zoom In (-)</button>
       <button (click)="resetView()">Reset</button>
-      <button (click)="clearGeofences()">Clear Geofences</button>
+      <button (click)="clearGeofences()">Clear all Geofences</button>
       <button (click)="toggleDeleteMode()">
-        {{ deleteMode ? "Cancel Delete" : "Delete Fence" }}
+        {{ deleteMode ? "Cancel Delete" : "Select to delete Fence" }}
       </button>
       <button (click)="togglePath()">
         {{ showPath ? "Hide path" : "Show path" }}
@@ -45,14 +33,8 @@
         <button (click)="finalizeShape()">Finalize Free Shape</button>
       </div>
       <!-- <div *ngIf="hoveredShape"> -->
-      <button (click)="copyGeofence()">Copy</button>
-      <!-- @if (currentShape && shapeMode !== 'free') {
+      <button (click)="copyGeofence()">Copy geofence </button>
 
-    <button (click)="finalizeShape()" [disabled]="!isDrawingShape">
-      Finalize Shape
-    </button>
-    } -->
-      <button class="btn btn-danger" (click)="deleteMap()">Delete Map</button>
       <button (click)="toggleGrid()">
         {{ gridEnabled ? "Hide Grid" : "Show Grid" }}
       </button>
@@ -104,6 +86,7 @@
       X: {{ r.x | number : "1.2-2" }} <br />
       Y: {{ r.y | number : "1.2-2" }} <br />
       Z: {{ r.z }} <br />
+      speed: {{r.speed | number : '1.2-2'}}m/s
       <hr />
     </div>
   </div>
@@ -120,6 +103,11 @@
   <div class="localisation-status" *ngIf="localisationStatus">
     <p>
       Localisation Status: <strong>{{ localisationStatus }}</strong>
+    </p>
+  </div>
+  <div class="localisation-status" *ngIf="localisationStatus">
+    <p>
+      <!-- Localisation Status: <strong>{{  }}</strong> -->
     </p>
   </div>
   <h5><b>Pedestrians</b></h5>
@@ -155,7 +143,6 @@
 
       <!-- Select Shape -->
       @if (!isEditing) {
-
       <div class="mb-3">
         <label>Select Shape</label>
         <select class="form-select" formControlName="shapeMode">
@@ -173,31 +160,11 @@
         @if (mapFormDirective.submitted) { @if
         (hasError('squareSize','required')) {
         <div class="text-danger">Size is required</div>
+        } @else if
+        (hasError('squareSize','min')) {
+        <div class="text-danger">Size must not be less than 100</div>
         }}
       </div>
-
-      <!-- <div class="mb-3" *ngIf="mapForm.value.shapeMode === 'triangle'">
-        <label>Base</label>
-        <input
-          type="number"
-          class="form-control"
-          formControlName="triangleBase"
-        />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('triangleBase','required')) {
-        <div class="text-danger">Size is required</div>
-        }}
-        <label>Height</label>
-        <input
-          type="number"
-          class="form-control"
-          formControlName="triangleHeight"
-        />
-        @if (mapFormDirective.submitted) { @if
-        (hasError('triangleHeight','required')) {
-        <div class="text-danger">Size is required</div>
-        }}
-      </div> -->
 
       <!-- Select Color -->
       <div class="mb-3">
@@ -209,7 +176,49 @@
           </button>
         </div>
       </div>
-
+      <div class="mb-3">
+        <label>Min Speed (m/s)</label>
+        <input type="number" class="form-control" formControlName="minSpeed"
+          placeholder="Enter minimum allowed speed" />
+        @if (mapFormDirective.submitted) {
+        @if(hasError('minSpeed' ,'required')){
+        <div class="text-danger">Min speed is required </div>
+        } @else if
+        (hasError('minSpeed','max')) {
+        <div class="text-danger">Min speed must not be greater than 10</div>
+        }@else if
+        (hasError('minSpeed','min')) {
+        <div class="text-danger">Min speed must be greater than 0</div>
+        }}
+      </div>
+      <div class="mb-3">
+        <label>Max Speed (m/s)</label>
+        <input type="number" class="form-control" formControlName="maxSpeed"
+          placeholder="Enter maximum allowed speed" />
+        @if (mapFormDirective.submitted) {
+        @if(hasError('maxSpeed' ,'required')){
+        <div class="text-danger">Max speed is required </div>
+        }
+        @else if
+        (hasError('maxSpeed','max')) {
+        <div class="text-danger">Max speed must not be greater than 10</div>
+        }@else if
+        (hasError('maxSpeed','min')) {
+        <div class="text-danger">Max speed must be greater than 0</div>
+        }@else if (mapForm.errors?.['maxLessThanMin']) {
+        <div class="text-danger"> Max speed must be greater than or equal to Min speed.</div>
+        }}
+      </div>
+      <div class="mb-3">
+        <label>Time Duration (mins)</label>
+        <input type="number" class="form-control" formControlName="timeLimitMinutes"
+          placeholder="Enter maximum allowed speed" />
+        @if (mapFormDirective.submitted) {
+        @if(hasError('timeLimitMinutes' ,'required')){
+        <div class="text-danger">Duration is required </div>
+        }
+        }
+      </div>
       <!-- Draggable / Resizable -->
       <div class="form-check">
         <input type="checkbox" class="form-check-input" id="drag" formControlName="isDrag" />

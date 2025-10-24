@@ -25,7 +25,6 @@ export class LocalmapService {
     }
 
     const ip = localStorage.getItem('_I');
-    console.log('IP', ip);
     if (!ip) return;
 
     const decodedIP = atob(ip);

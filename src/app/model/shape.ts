@@ -19,4 +19,9 @@ export interface Shape {
   topY?: any;
   color?: any;
   isRestricted?: any;
+  shapeMode?: any;
+  speedLimit?: number;
+  timeLimitMinutes?: number;
+  minSpeed?: number;
+  maxSpeed?: number;
 }
