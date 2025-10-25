@@ -413,7 +413,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     );
     if (index !== -1) {
       this.polygons.splice(index, 1);
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      // REPLACE THIS LINE:
+      const shapesToSave = this.polygons.map((s) => {
+        const shapeCopy = JSON.parse(JSON.stringify(s));
+        return this.convertSquareToPoints(shapeCopy);
+      });
+      localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
     }
     // Clear selection
     this.selectedFence = null;
@@ -451,7 +456,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.editingShape.color = this.mapForm.value.color;
         this.editingShape.isDraggable = this.mapForm.value.isDrag;
         this.editingShape.isResizable = this.mapForm.value.isResize;
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
       } else {
         this.pendingTool = this.mapForm.value;
         this.gridEnabled = true; // <--- ENABLE GRID HERE
@@ -473,11 +482,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.saveOriginalState();
       const saved = localStorage.getItem('geoFences');
       this.polygons = saved
-        ? JSON.parse(saved).map((s: any) => ({
-            ...s,
-            isDraggable: s.isDraggable === true,
-            isResizable: s.isResizable === true,
-          }))
+        ? JSON.parse(saved).map((s: any) => {
+            const shape = {
+              ...s,
+              isDraggable: s.isDraggable === true,
+              isResizable: s.isResizable === true,
+            };
+            // Convert points to startX/endX for internal use
+            return this.convertPointsToSquare(shape);
+          })
         : [];
       // this.carSocket.updateFences(this.polygons);
       this.redraw();
@@ -485,6 +498,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     canvas.addEventListener('mousemove', (event) => {
       this.clampOffsets();
       this.coord = this.getImageCoords(event);
+      // console.log("X" , this.coord.x , "Y" , coo);
     });
     canvas.addEventListener('resize', () => {
       this.fitImageToCanvas();
@@ -852,13 +866,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private getImageCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
-
+    console.log('event.cliet X', event.clientX);
+    console.log('event.cliet Y', event.clientY);
     const cssX = event.clientX - rect.left;
     const cssY = event.clientY - rect.top;
-
+    console.log('Css X', cssX);
+    console.log('CssY', cssY);
     let imgX = (cssX - this.offsetX) / this.scale;
     let imgY = (cssY - this.offsetY) / this.scale;
-
+    console.log('offseX', this.offsetX);
+    console.log('Scale', this.scale);
+    console.log('imgX', imgX);
     imgY = this.mapImage.nativeElement.naturalHeight - imgY;
 
     return { x: imgX, y: imgY };
@@ -968,7 +986,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     };
     if (!this.doesShapeOverlap(newShape)) {
       this.polygons.push(newShape);
-      localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+      // REPLACE THIS LINE:
+      const shapesToSave = this.polygons.map((s) => {
+        const shapeCopy = JSON.parse(JSON.stringify(s));
+        return this.convertSquareToPoints(shapeCopy);
+      });
+      localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
     } else {
       alert('shape is overlapped existing shape');
     }
@@ -1062,7 +1085,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
         // ✅ Save
         this.polygons.push(newShape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        // REPLACE THIS LINE:
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
         this.copyMode = false;
         this.copiedShapeTemplate = null;
         this.redraw();
@@ -1103,7 +1131,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           minSpeed: tool.minSpeed,
           speedLimit: tool.speedLimit,
           timeLimitMinutes: tool.timeLimitMinutes,
-          points: [topLeft, topRight, bottomRight, bottomLeft],
+          // points: [topLeft, topRight, bottomRight, bottomLeft],
         };
         this.gridEnabled = false;
         this.normalizeSquare(newShape);
@@ -1124,7 +1152,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             alert('Fence is outside the boundary!');
           } else {
             this.polygons.push(newShape);
-            localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+            const shapesToSave = this.polygons.map((s) => {
+              const shapeCopy = JSON.parse(JSON.stringify(s));
+              return this.convertSquareToPoints(shapeCopy);
+            });
+            localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
             this.redraw();
           }
         } else {
@@ -1566,8 +1598,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         if (this.isPointInShape({ x, y }, this.polygons[i])) {
           if (confirm(`Delete fence "${this.polygons[i].name}"?`)) {
             this.polygons.splice(i, 1);
-            localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-            // this.carSocket.updateFences(this.polygons);
+            const shapesToSave = this.polygons.map((s) => {
+              const shapeCopy = JSON.parse(JSON.stringify(s));
+              return this.convertSquareToPoints(shapeCopy);
+            });
+            localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
             this.redraw();
           }
           break;
@@ -1746,7 +1781,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       if (!this.doesShapeOverlap(placedShape)) {
         this.polygons.push(placedShape);
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
         this.redraw();
       } else {
         alert('Invalid copy: overlaps another fence!');
@@ -1786,8 +1825,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (this.resizingShape) {
       const idx = this.polygons.indexOf(this.resizingShape);
       {
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        // this.carSocket.updateFences(this.polygons);
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave)); // this.carSocket.updateFences(this.polygons);
       }
       this.currentPolygon = [];
       this.currentShape = null;
@@ -1810,7 +1852,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.originalCoordinates(); // if fences are overlaps then it goes to the original coordinates
         alert('Invalid move: shape overlaps another!');
       } else {
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
       }
       this.isDrawingShape = false;
       this.currentPolygon = [];
@@ -2012,6 +2058,41 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     return [];
   }
+
+  private convertSquareToPoints(shape: Shape): Shape {
+    if (shape.mode === 'square' && shape.startX != null && shape.endX != null) {
+      // Create points array from startX, endX, startY, endY
+      shape.points = [
+        { x: shape.startX, y: shape.startY! }, // top-left
+        { x: shape.endX, y: shape.startY! }, // top-right
+        { x: shape.endX, y: shape.endY! }, // bottom-right
+        { x: shape.startX, y: shape.endY! }, // bottom-left
+      ];
+
+      // Remove old properties (optional - for cleaner storage)
+      delete shape.startX;
+      delete shape.endX;
+      delete shape.startY;
+      delete shape.endY;
+    }
+    return shape;
+  }
+
+  // 2. ADD THIS HELPER METHOD to convert points back o startX/endX for internal use
+  private convertPointsToSquare(shape: Shape): Shape {
+    if (shape.mode === 'square' && shape.points && shape.points.length === 4) {
+      // Extract min/max from points
+      const xs = shape.points.map((p) => p.x);
+      const ys = shape.points.map((p) => p.y);
+
+      shape.startX = Math.min(...xs);
+      shape.startY = Math.min(...ys);
+      shape.endX = Math.max(...xs);
+      shape.endY = Math.max(...ys);
+    }
+    return shape;
+  }
+
   private polygonsOverlap(
     polyA: { x: number; y: number }[],
     polyB: { x: number; y: number }[]
@@ -2166,8 +2247,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.originalCoordinates(); // rollback
           return;
         }
-        localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-        // this.carSocket.updateFences(this.polygons);
+        const shapesToSave = this.polygons.map((s) => {
+          const shapeCopy = JSON.parse(JSON.stringify(s));
+          return this.convertSquareToPoints(shapeCopy);
+        });
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave)); // this.carSocket.updateFences(this.polygons);
 
         this.resetEditState();
         this.ignoreNextClickAfterEdit = true;
