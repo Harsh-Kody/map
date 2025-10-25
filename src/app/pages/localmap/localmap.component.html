@@ -80,6 +80,8 @@
 
 <div class="robot-info">
   <h5><b>Robot Coords</b></h5>
+
+  <h6 *ngIf="coord"> X -> {{coord.x | number : '1.2-2'}} <br /> Y -> {{coord.y | number: '1.2-2'}} </h6>
   <div *ngIf="robots.length > 0; else noRobot">
     <div *ngFor="let r of robots">
       <strong>{{ r.name || "Robot " }}</strong><br />
@@ -87,6 +89,7 @@
       Y: {{ r.y | number : "1.2-2" }} <br />
       Z: {{ r.z }} <br />
       speed: {{r.speed | number : '1.2-2'}}m/s
+
       <hr />
     </div>
   </div>
