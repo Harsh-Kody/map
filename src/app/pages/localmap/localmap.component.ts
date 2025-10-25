@@ -636,14 +636,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   @HostListener('mousemove', ['$event'])
   onMouseMove(event: MouseEvent) {
-    if (!this.mapCanvas.nativeElement) return;
+    if (!this.mapCanvas.nativeElement) {
+      return;
+    }
     if (event.target !== this.mapCanvas.nativeElement) return;
-
     const { x, y } = this.getTransformedCoords(event);
     const mouseCanvas = this.toCanvasCoords(x, y);
     let foundHover = false;
-
-    // 🔹 Hover detection
     for (let i = this.polygons.length - 1; i >= 0; i--) {
       if (this.isPointInShape({ x, y }, this.polygons[i])) {
         this.hoveredShape = this.polygons[i];
@@ -653,8 +652,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     if (!foundHover) this.hoveredShape = null;
     this.redraw();
-
-    // 🔹 Handle panning
     if (this.isPanning) {
       this.offsetX = event.clientX - this.dragStart.x;
       this.offsetY = event.clientY - this.dragStart.y;
@@ -665,8 +662,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.redraw();
       return;
     }
-
-    // 🔹 Update cursor on hover
     if (this.hoveredShape) {
       const near = this.isNearHandle(this.hoveredShape, mouseCanvas);
       if (near) {
@@ -675,7 +670,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         } else {
           this.mapCanvas.nativeElement.style.cursor = 'nwse-resize';
         }
-      } else if (this.hoveredShape.isDraggable) {
+      } else if (this.hoveredShape.isDraggable === true) {
         this.mapCanvas.nativeElement.style.cursor = 'move';
       } else {
         this.mapCanvas.nativeElement.style.cursor = 'default';
@@ -683,120 +678,115 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     } else {
       this.mapCanvas.nativeElement.style.cursor = 'default';
     }
-    //Resize
-    if (
-      this.resizingShape &&
-      this.activeHandleIndex !== null &&
-      this.resizingShape.points
-    ) {
-      const handleIndex = this.activeHandleIndex;
-      const fixedIndex = (handleIndex + 2) % 4;
-      const fixed = this.resizingShape.points[fixedIndex];
+    if (this.resizingShape && this.activeHandleIndex !== null) {
+      const { x, y } = this.getTransformedCoords(event);
+      const proposedShape: Shape = JSON.parse(
+        JSON.stringify(this.resizingShape)
+      );
+      // if (proposedShape.mode === 'circle') {
+      //   const dx = x - proposedShape.startX!;
+      //   const dy = y - proposedShape.startY!;
+      //   proposedShape.radius = Math.hypot(dx, dy);
+      //   proposedShape.endX = x;
+      //   proposedShape.endY = y;
+      // } else
+      if (proposedShape.mode === 'square' && this.activeHandleIndex !== null) {
+        const minSize = 30;
 
-      // DON'T clamp mouse position - use raw coordinates
-      const mousePos = { x, y }; // Remove clampToCanvas here
+        switch (this.activeHandleIndex) {
+          case 0: // top-left
+            proposedShape.startX = Math.min(x, proposedShape.endX! - minSize);
+            proposedShape.startY = Math.min(y, proposedShape.endY! - minSize);
+            break;
 
-      let dx = mousePos.x - fixed.x;
-      let dy = mousePos.y - fixed.y;
+          case 1: // top-right
+            proposedShape.endX = Math.max(x, proposedShape.startX! + minSize);
+            proposedShape.startY = Math.min(y, proposedShape.endY! - minSize);
+            break;
 
-      // Maintain square aspect ratio
-      let size = Math.max(Math.abs(dx), Math.abs(dy));
+          case 2: // bottom-right
+            proposedShape.endX = Math.max(x, proposedShape.startX! + minSize);
+            proposedShape.endY = Math.max(y, proposedShape.startY! + minSize);
+            break;
 
-      const MIN_SIZE = 50;
-      const MAX_SIZE = 300;
+          case 3: // bottom-left
+            proposedShape.startX = Math.min(x, proposedShape.endX! - minSize);
+            proposedShape.endY = Math.max(y, proposedShape.startY! + minSize);
+            break;
+        }
 
-      // Clamp size
-      size = Math.max(MIN_SIZE, Math.min(size, MAX_SIZE));
+        // force square aspect ratio
+        const width = proposedShape.endX! - proposedShape.startX!;
+        const height = proposedShape.endY! - proposedShape.startY!;
+        const size = Math.max(Math.abs(width), Math.abs(height));
 
-      // Preserve direction of drag
-      const signX = dx >= 0 ? 1 : -1;
-      const signY = dy >= 0 ? 1 : -1;
+        if (this.activeHandleIndex === 0) {
+          // top-left
+          proposedShape.startX = proposedShape.endX! - size;
+          proposedShape.startY = proposedShape.endY! - size;
+        } else if (this.activeHandleIndex === 1) {
+          // top-right
+          proposedShape.endX = proposedShape.startX! + size;
+          proposedShape.startY = proposedShape.endY! - size;
+        } else if (this.activeHandleIndex === 2) {
+          // bottom-right
+          proposedShape.endX = proposedShape.startX! + size;
+          proposedShape.endY = proposedShape.startY! + size;
+        } else if (this.activeHandleIndex === 3) {
+          // bottom-left
+          proposedShape.startX = proposedShape.endX! - size;
+          proposedShape.endY = proposedShape.startY! + size;
+        }
+        const clampedStart = this.clampToCanvas(
+          proposedShape.startX!,
+          proposedShape.startY!
+        );
+        const clampedEnd = this.clampToCanvas(
+          proposedShape.endX!,
+          proposedShape.endY!
+        );
 
-      // Calculate new corner positions
-      const movingX = fixed.x + size * signX;
-      const movingY = fixed.y + size * signY;
-
-      // Update all corners based on which handle is being dragged
-      const newPoints = [...this.resizingShape.points];
-
-      switch (handleIndex) {
-        case 0: // top-left
-          newPoints[0] = { x: movingX, y: movingY };
-          newPoints[1] = { x: movingX + size, y: movingY };
-          newPoints[2] = { x: movingX + size, y: movingY + size };
-          newPoints[3] = { x: movingX, y: movingY + size };
-          break;
-        case 1: // top-right
-          newPoints[1] = { x: movingX, y: movingY };
-          newPoints[0] = { x: movingX - size, y: movingY };
-          newPoints[3] = { x: movingX - size, y: movingY + size };
-          newPoints[2] = { x: movingX, y: movingY + size };
-          break;
-        case 2: // bottom-right
-          newPoints[2] = { x: movingX, y: movingY };
-          newPoints[1] = { x: movingX, y: movingY - size };
-          newPoints[0] = { x: movingX - size, y: movingY - size };
-          newPoints[3] = { x: movingX - size, y: movingY };
-          break;
-        case 3: // bottom-left
-          newPoints[3] = { x: movingX, y: movingY };
-          newPoints[0] = { x: movingX, y: movingY - size };
-          newPoints[1] = { x: movingX + size, y: movingY - size };
-          newPoints[2] = { x: movingX + size, y: movingY };
-          break;
+        proposedShape.startX = clampedStart.x;
+        proposedShape.startY = clampedStart.y;
+        proposedShape.endX = clampedEnd.x;
+        proposedShape.endY = clampedEnd.y;
+      } else if (proposedShape.mode === 'free' && proposedShape.points) {
+        proposedShape.points[this.activeHandleIndex] = this.clampToCanvas(x, y);
       }
 
-      // Optional: Check if shape stays within canvas bounds
-      const img = this.mapImage.nativeElement;
-      const imgWidth = img.naturalWidth;
-      const imgHeight = img.naturalHeight;
-
-      const allInBounds = newPoints.every(
-        (p) => p.x >= 0 && p.x <= imgWidth && p.y >= 0 && p.y <= imgHeight
-      );
-
-      // Check overlap
       const idx = this.polygons.indexOf(this.resizingShape);
-      const wouldOverlap = this.doesShapeOverlap(
-        { ...this.resizingShape, points: newPoints },
-        idx
-      );
-
-      // Only update if valid (in bounds and no overlap)
-      if (allInBounds && !wouldOverlap) {
-        this.resizingShape.points = newPoints;
+      if (!this.doesShapeOverlap(proposedShape, idx)) {
+        Object.assign(this.resizingShape, proposedShape);
+        this.normalizeSquare(this.resizingShape);
       }
-
       this.redraw();
-      return; // ✅ Prevent fallback dragging
+      return;
     }
     if (this.draggingShape) {
       if (event.buttons !== 1) {
-        // mouse released unexpectedly
+        // mouse released but we never got proper mouseup
         this.draggingShape = null;
         this.resizingShape = null;
         this.activeHandleIndex = null;
         this.originalPoints = [];
+        // this.mapCanvas.nativeElement.style.cursor = 'default';
         return;
       }
-
       const dx = x - this.dragOffset.x;
       const dy = y - this.dragOffset.y;
 
-      if (this.draggingShape.points) {
-        // move all points by same offset
+      if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
         const movedPoints = this.originalPoints.map((p) => ({
           x: p.x + dx,
           y: p.y + dy,
         }));
-
-        // clamp to canvas
-        const img = this.mapImage.nativeElement;
+        // ✅ Clamp entire polygon
         const minX = Math.min(...movedPoints.map((p) => p.x));
         const minY = Math.min(...movedPoints.map((p) => p.y));
         const maxX = Math.max(...movedPoints.map((p) => p.x));
         const maxY = Math.max(...movedPoints.map((p) => p.y));
 
+        const img = this.mapImage.nativeElement;
         const shiftX = Math.max(0 - minX, Math.min(0, img.naturalWidth - maxX));
         const shiftY = Math.max(
           0 - minY,
@@ -807,6 +797,42 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           x: p.x + shiftX,
           y: p.y + shiftY,
         }));
+      } else {
+        const img = this.mapImage.nativeElement;
+        const canvasWidth = img.naturalWidth;
+        const canvasHeight = img.naturalHeight;
+
+        // original width & height
+        const width = this.draggingShape.endX! - this.draggingShape.startX!;
+        const height = this.draggingShape.endY! - this.draggingShape.startY!;
+
+        // proposed position
+        let newStartX = this.originalPoints[0].x + dx;
+        let newStartY = this.originalPoints[0].y + dy;
+        let newEndX = newStartX + width;
+        let newEndY = newStartY + height;
+
+        if (newStartX < 0) {
+          newStartX = 0;
+          newEndX = width;
+        }
+        if (newStartY < 0) {
+          newStartY = 0;
+          newEndY = height;
+        }
+        if (newEndX > canvasWidth) {
+          newEndX = canvasWidth;
+          newStartX = canvasWidth - width;
+        }
+        if (newEndY > canvasHeight) {
+          newEndY = canvasHeight;
+          newStartY = canvasHeight - height;
+        }
+
+        this.draggingShape.startX = newStartX;
+        this.draggingShape.startY = newStartY;
+        this.draggingShape.endX = newEndX;
+        this.draggingShape.endY = newEndY;
       }
 
       if (this.clickedNonDraggableShape) {
@@ -815,36 +841,23 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.resizingShape = null;
         this.activeHandleIndex = null;
       }
-
-      this.redraw();
-      return;
-    }
-
-    if (this.isDrawingShape && this.currentShape) {
-      if (this.shapeMode === 'square' && this.currentShape.points) {
-        const last = this.clampToCanvas(x, y);
-        const first = this.currentShape.points[0];
-        // make proper square dynamically as mouse moves
-        const width = last.x - first.x;
-        const height = last.y - first.y;
-        const size = Math.max(Math.abs(width), Math.abs(height));
-        const endX = width >= 0 ? first.x + size : first.x - size;
-        const endY = height >= 0 ? first.y + size : first.y - size;
-        this.currentShape.points = [
-          { x: first.x, y: first.y },
-          { x: endX, y: first.y },
-          { x: endX, y: endY },
-          { x: first.x, y: endY },
-        ];
-      } else if (this.shapeMode === 'free' && this.currentShape.points) {
-        // free mode continues dynamically
-        const last = this.clampToCanvas(x, y);
-        this.currentShape.points[this.currentShape.points.length - 1] = last;
-      }
       this.redraw();
     }
+
+    if (this.isDrawingShape && this.currentShape && this.shapeMode !== 'free') {
+      this.currentShape.endX = x;
+      this.currentShape.endY = y;
+      this.redraw();
+    }
+
+    // if (this.isPanning && !this.isImageFitted()) {
+    //   this.offsetX = event.clientX - this.dragStart.x;
+    //   this.offsetY = event.clientY - this.dragStart.y;
+    //   // this.clampOffsets();
+    //   this.redraw();
+    //   return; // skip shape hover / dragging logic
+    // }
   }
-
   private clampToCanvas(x: number, y: number) {
     const img = this.mapImage.nativeElement;
     const maxX = img.naturalWidth;
@@ -857,9 +870,20 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private getShapeCorners(shape: Shape): { x: number; y: number }[] {
-    if (shape.points && shape.points.length === 4) {
-      return shape.points;
+    if (shape.mode === 'square') {
+      const x1 = Math.min(shape.startX!, shape.endX!);
+      const y1 = Math.min(shape.startY!, shape.endY!);
+      const x2 = Math.max(shape.startX!, shape.endX!);
+      const y2 = Math.max(shape.startY!, shape.endY!);
+
+      return [
+        { x: x1, y: y1 }, // top-left
+        { x: x2, y: y1 }, // top-right
+        { x: x2, y: y2 }, // bottom-right
+        { x: x1, y: y2 }, // bottom-left
+      ];
     }
+
     return [];
   }
 
@@ -885,7 +909,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private getTransformedCoords(event: MouseEvent) {
     const canvas: HTMLCanvasElement = this.mapCanvas.nativeElement;
     const rect = canvas.getBoundingClientRect();
-
     const canvasX = event.clientX - rect.left;
     const canvasY = event.clientY - rect.top;
     let imgX = (canvasX - this.offsetX) / this.scale;
@@ -901,37 +924,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.offsetY;
     return { x: canvasX, y: canvasY };
   }
-  private normalizeSquare(shape: Shape): { x: number; y: number }[] {
-    if (shape.mode !== 'square' || !shape.points || shape.points.length < 2)
-      return shape.points || [];
-
-    // Find min/max from points
-    const xs = shape.points.map((p) => p.x);
-    const ys = shape.points.map((p) => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-
-    // Compute square side length (use larger dimension to keep it perfect)
-    const side = Math.max(maxX - minX, maxY - minY);
-
-    // Build normalized corners
-    const normalizedPoints = [
-      { x: minX, y: minY }, // top-left
-      { x: minX + side, y: minY }, // top-right
-      { x: minX + side, y: minY + side }, // bottom-right
-      { x: minX, y: minY + side }, // bottom-left
-    ];
-
-    // 🔄 Update both styles for compatibility
-    // shape.startX = minX;
-    // shape.startY = minY;
-    // shape.endX = minX + side;
-    // shape.endY = minY + side;
-    shape.points = normalizedPoints;
-
-    return normalizedPoints;
+  private normalizeSquare(shape: Shape) {
+    if (shape.mode !== 'square') return;
+    const minX = Math.min(shape.startX!, shape.endX!);
+    const maxX = Math.max(shape.startX!, shape.endX!);
+    const minY = Math.min(shape.startY!, shape.endY!);
+    const maxY = Math.max(shape.startY!, shape.endY!);
+    shape.startX = minX;
+    shape.startY = minY;
+    shape.endX = maxX;
+    shape.endY = maxY;
   }
 
   // completeFreeGeofence() {
@@ -1033,33 +1035,25 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           JSON.stringify(this.copiedShapeTemplate)
         );
 
-        if (newShape.points) {
-          const dx = x - newShape.points[0].x;
-          const dy = y - newShape.points[0].y;
+        if (newShape.mode === 'free' && newShape.points) {
+          // Use first point as reference
+          const firstPoint = newShape.points[0];
+          const dx = x - firstPoint.x;
+          const dy = y - firstPoint.y;
+
           newShape.points = newShape.points.map((p) => ({
             x: p.x + dx,
             y: p.y + dy,
           }));
+        } else {
+          // Default (square, circle, etc.)
+          const dx = x - newShape.startX!;
+          const dy = y - newShape.startY!;
+          newShape.startX! += dx;
+          newShape.startY! += dy;
+          newShape.endX! += dx;
+          newShape.endY! += dy;
         }
-        // if (newShape.mode === 'free' && newShape.points) {
-        //   // Use first point as reference
-        //   const firstPoint = newShape.points[0];
-        //   const dx = x - firstPoint.x;
-        //   const dy = y - firstPoint.y;
-
-        //   newShape.points = newShape.points.map((p) => ({
-        //     x: p.x + dx,
-        //     y: p.y + dy,
-        //   }));
-        // } else {
-        //   // Default (square, circle, etc.)
-        //   const dx = x - newShape.startX!;
-        //   const dy = y - newShape.startY!;
-        //   newShape.startX! += dx;
-        //   newShape.startY! += dy;
-        //   newShape.endX! += dx;
-        //   newShape.endY! += dy;
-        // }
 
         // ✅ Give unique name
         if (this.copiedShapeTemplate.name) {
@@ -1118,10 +1112,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         // Directly create fixed square on click
         newShape = {
           mode: 'square',
-          // startX: x,
-          // startY: y,
-          // endX: x + tool.squareSize,
-          // endY: y + tool.squareSize,
+          startX: x,
+          startY: y,
+          endX: x + tool.squareSize,
+          endY: y + tool.squareSize,
           color: tool.color,
           isDraggable: tool.isDrag,
           isResizable: tool.isResize,
@@ -1147,6 +1141,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       if (newShape) {
         if (this.isDuplicateName(newShape.name)) return;
+
         if (!this.doesShapeOverlap(newShape)) {
           if (!this.isShapeInsideCanvas(newShape)) {
             alert('Fence is outside the boundary!');
@@ -1236,10 +1231,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         }
         this.draggingShape = this.hoveredShape;
         this.dragOffset = { x, y };
-        if (this.draggingShape.points) {
+        if (this.draggingShape.mode === 'free' && this.draggingShape.points) {
           this.originalPoints = this.draggingShape.points.map((p) => ({
             ...p,
           }));
+        } else {
+          this.originalPoints = [
+            { x: this.draggingShape.startX!, y: this.draggingShape.startY! },
+            { x: this.draggingShape.endX!, y: this.draggingShape.endY! },
+          ];
         }
         return;
       }
@@ -1277,15 +1277,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         : this.shapeMode!;
       this.currentShape = {
         mode,
-        // startX: x,
-        // startY: y,
-        // endX: x,
-        // endY: y,
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
         isDraggable: this.mapForm.value.isDrag,
         isResizable: this.mapForm.value.isResize,
         isRestricted: this.mapForm.controls['isRestricted'].value,
         maxSpeed: this.mapForm.controls['maxSpeed'].value,
         minSpeed: this.mapForm.controls['minSpeed'].value,
+
         speedLimit: this.mapForm.controls['speedLimit'].value,
         timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
       } as Shape;
@@ -1626,20 +1627,20 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
     }
 
-    // this.currentShape = {
-    //   mode: this.shapeMode,
-    //   startX: snappedX,
-    //   startY: snappedY,
-    //   endX: snappedX + 50, // default size
-    //   endY: snappedY + 50,
-    //   isDraggable: this.mapForm.value.isDrag,
-    //   isResizable: this.mapForm.value.isResize,
-    //   isRestricted: this.mapForm.controls['isRestricted'].value,
-    //   maxSpeed: this.mapForm.controls['maxSpeed'].value,
-    //   minSpeed: this.mapForm.controls['minSpeed'].value,
-    //   speedLimit: this.mapForm.controls['speedLimit'].value,
-    //   timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
-    // };
+    this.currentShape = {
+      mode: this.shapeMode,
+      startX: snappedX,
+      startY: snappedY,
+      endX: snappedX + 50, // default size
+      endY: snappedY + 50,
+      isDraggable: this.mapForm.value.isDrag,
+      isResizable: this.mapForm.value.isResize,
+      isRestricted: this.mapForm.controls['isRestricted'].value,
+      maxSpeed: this.mapForm.controls['maxSpeed'].value,
+      minSpeed: this.mapForm.controls['minSpeed'].value,
+      speedLimit: this.mapForm.controls['speedLimit'].value,
+      timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
+    };
   }
 
   onWheel(event: WheelEvent) {
@@ -1677,19 +1678,40 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     point: { x: number; y: number },
     shape: Shape
   ): boolean {
-    if (!shape.points || shape.points.length < 3) return false;
-
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.beginPath();
-
-    const first = this.toCanvasCoords(shape.points[0].x, shape.points[0].y);
-    this.ctx.moveTo(first.x, first.y);
-    for (let i = 1; i < shape.points.length; i++) {
-      const p = this.toCanvasCoords(shape.points[i].x, shape.points[i].y);
-      this.ctx.lineTo(p.x, p.y);
+    if (shape.mode === 'square') {
+      const topLeft = this.toCanvasCoords(shape.startX!, shape.startY!);
+      const bottomRight = this.toCanvasCoords(shape.endX!, shape.endY!);
+      this.ctx.rect(
+        topLeft.x,
+        topLeft.y,
+        bottomRight.x - topLeft.x,
+        bottomRight.y - topLeft.y
+      );
     }
-    this.ctx.closePath();
+    //  else if (shape.mode === 'triangle') {
+    //   const p1 = this.toCanvasCoords(shape.startX!, shape.startY!);
+    //   const p2 = this.toCanvasCoords(shape.endX!, shape.endY!);
+    //   const midX = shape.startX! * 2 - shape.endX!;
+    //   const midY = shape.endY!;
+    //   const p3 = this.toCanvasCoords(midX, midY);
+
+    //   this.ctx.moveTo(p1.x, p1.y);
+    //   this.ctx.lineTo(p2.x, p2.y);
+    //   this.ctx.lineTo(p3.x, p3.y);
+    //   this.ctx.closePath();
+    // }
+    else if (shape.mode === 'free' && shape.points?.length) {
+      const first = this.toCanvasCoords(shape.points[0].x, shape.points[0].y);
+      this.ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < shape.points.length; i++) {
+        const p = this.toCanvasCoords(shape.points[i].x, shape.points[i].y);
+        this.ctx.lineTo(p.x, p.y);
+      }
+      this.ctx.closePath();
+    }
 
     const canvasPt = this.toCanvasCoords(point.x, point.y);
     const result = this.ctx.isPointInPath(canvasPt.x, canvasPt.y);
@@ -1737,9 +1759,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           ...p,
         }));
       } else {
-        this.draggingShape.points = this.originalPoints.map((p) => ({
-          ...p,
-        }));
+        this.draggingShape.startX = this.originalPoints[0].x;
+        this.draggingShape.startY = this.originalPoints[0].y;
+        this.draggingShape.endX = this.originalPoints[1].x;
+        this.draggingShape.endY = this.originalPoints[1].y;
       }
     }
   }
@@ -1765,14 +1788,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           x: pt.x + dx,
           y: pt.y + dy,
         }));
-      } else if (placedShape.mode === 'square' && placedShape.points) {
-        placedShape.points = placedShape.points.map((pt) => ({
-          x: pt.x + dx,
-          y: pt.y + dy,
-        }));
-
-        // ✅ Normalize copied square before saving
-        placedShape.points = this.normalizeSquare(placedShape);
       } else {
         placedShape.startX! += dx;
         placedShape.startY! += dy;
@@ -1844,8 +1859,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     if (this.draggingShape) {
-      if (this.draggingShape?.mode === 'square' && this.draggingShape.points) {
-        this.draggingShape.points = this.normalizeSquare(this.draggingShape);
+      if (this.draggingShape?.mode === 'square') {
+        this.normalizeSquare(this.draggingShape);
       }
       const idx = this.polygons.indexOf(this.draggingShape);
       if (this.doesShapeOverlap(this.draggingShape, idx)) {
@@ -1867,9 +1882,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     if (!this.isDrawingShape || !this.currentShape) return;
-    if (this.currentShape.mode === 'square' && this.currentShape.points) {
-      // ✅ Normalize before saving final drawn square
-      this.currentShape.points = this.normalizeSquare(this.currentShape);
+    if (
+      this.currentShape.mode === 'square' &&
+      this.currentShape.startX === this.currentShape.endX &&
+      this.currentShape.startY === this.currentShape.endY
+    ) {
+      this.currentShape.endX = this.currentShape.startX! + this.squareSize;
+      this.currentShape.endY = this.currentShape.startY! + this.squareSize;
     }
 
     if (!this.doesShapeOverlap(this.currentShape)) {
@@ -2053,7 +2072,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private shapeToPolygon(shape: Shape): { x: number; y: number }[] {
-    if ((shape.mode === 'square' || shape.mode === 'free') && shape.points) {
+    if (shape.mode === 'square') {
+      return [
+        { x: shape.startX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.startY! },
+        { x: shape.endX!, y: shape.endY! },
+        { x: shape.startX!, y: shape.endY! },
+      ];
+    } else if (shape.mode === 'free' && shape.points) {
       return shape.points;
     }
     return [];
@@ -2291,20 +2317,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     let x = 0,
       y = 0;
 
-    if (shape.mode === 'square' && shape.points) {
-      const canvasPoints = shape.points.map((p) =>
-        this.toCanvasCoords(p.x, p.y)
+    if (shape.mode === 'square') {
+      const p1 = this.toCanvasCoords(shape.startX!, shape.startY!);
+      const p2 = this.toCanvasCoords(
+        shape.endX ?? shape.startX!,
+        shape.endY ?? shape.startY!
       );
-      const sum = canvasPoints.reduce(
-        (acc, p) => {
-          acc.x += p.x;
-          acc.y += p.y;
-          return acc;
-        },
-        { x: 0, y: 0 }
-      );
-      x = sum.x / canvasPoints.length;
-      y = sum.y / canvasPoints.length;
+      x = (p1.x + p2.x) / 2;
+      y = (p1.y + p2.y) / 2;
     } else if (shape.mode === 'free' && shape.points) {
       const canvasPoints = shape.points.map((p) =>
         this.toCanvasCoords(p.x, p.y)
@@ -2330,15 +2350,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   private drawShape(shape: Shape, fillStyle: string, strokeStyle: string) {
     this.ctx.beginPath();
-    if (shape.mode === 'square' && shape.points?.length) {
-      const first = this.toCanvasCoords(shape.points[0].x, shape.points[0].y);
-      this.ctx.moveTo(first.x, first.y);
-
-      for (let i = 1; i < shape.points.length; i++) {
-        const p = this.toCanvasCoords(shape.points[i].x, shape.points[i].y);
-        this.ctx.lineTo(p.x, p.y);
-      }
-      this.ctx.closePath();
+    if (shape.mode === 'square') {
+      const topLeft = this.toCanvasCoords(shape.startX!, shape.startY!);
+      const bottomRight = this.toCanvasCoords(shape.endX!, shape.endY!);
+      this.ctx.rect(
+        topLeft.x,
+        topLeft.y,
+        bottomRight.x - topLeft.x,
+        bottomRight.y - topLeft.y
+      );
     } else if (shape.mode === 'free' && shape.points?.length) {
       const first = this.toCanvasCoords(shape.points[0].x, shape.points[0].y);
       this.ctx.moveTo(first.x, first.y);
@@ -2641,8 +2661,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const point = { x: r.x, y: r.y };
         let inFence = false;
 
-        if (gf.mode === 'square')
-          inFence = this.isPointInPolygon(point, gf.points);
+        if (gf.mode === 'square') inFence = this.isPointInSquare(point, gf);
         else if (gf.mode === 'free' && gf.points?.length > 2)
           inFence = this.isPointInPolygon(point, gf.points);
         else if (gf.points?.length > 2)
