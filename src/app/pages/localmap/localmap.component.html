@@ -58,6 +58,15 @@
       {{ log.time | date : "shortTime" }}
     </li>
   </ul>
+  <h3>Fence Entry/Exit Log</h3>
+  <ul>
+    <li *ngFor="let log of allFenceSessions">
+      🤖 {{ log.robotId }} — <b>{{ log.fenceName }}</b><br>
+      Entry: {{ log.entryTime | date:'shortTime' }} <br>
+      Exit: {{ log.exitTime ? (log.exitTime | date:'shortTime') : 'Still Inside' }} <br>
+      Duration: {{ log.durationMinutes || 0 | number:'1.2-2' }} mins
+    </li>
+  </ul>
 </div>
 
 <div class="shape-options" *ngIf="shapeMode !== 'free'">
@@ -79,9 +88,10 @@
 </div>
 
 <div class="robot-info">
+  <b>Mouse position</b>
+  <h6 *ngIf="coord"> X -> {{coord.x | number : '1.2-2'}} <br /> Y -> {{coord.y | number: '1.2-2'}} </h6>
   <h5><b>Robot Coords</b></h5>
 
-  <h6 *ngIf="coord"> X -> {{coord.x | number : '1.2-2'}} <br /> Y -> {{coord.y | number: '1.2-2'}} </h6>
   <div *ngIf="robots.length > 0; else noRobot">
     <div *ngFor="let r of robots">
       <strong>{{ r.name || "Robot " }}</strong><br />
