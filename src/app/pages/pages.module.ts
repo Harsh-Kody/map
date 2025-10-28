@@ -19,6 +19,7 @@ import { DashboardComponent } from './dashboard/dashboard.component';
 import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
 import { SharedModule } from '../shared/shared.module';
 import { ToastNotificationComponent } from '../shared/toast-notification/toast-notification.component';
+import { ZoneActivityComponent } from './zone-activity/zone-activity.component';
 
 @NgModule({
   declarations: [
@@ -32,6 +33,7 @@ import { ToastNotificationComponent } from '../shared/toast-notification/toast-n
     DashboardComponent,
     RobotSpeedComponent,
     ToastNotificationComponent,
+    ZoneActivityComponent,
   ],
   imports: [
     CommonModule,

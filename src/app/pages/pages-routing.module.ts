@@ -9,6 +9,7 @@ import { DashboardComponent } from './dashboard/dashboard.component';
 import { LoginComponent } from '../account/login/login.component';
 import { RobotSpeedComponent } from './robot-speed/robot-speed.component';
 import { RobotVibrationComponent } from './robot-vibration/robot-vibration.component';
+import { ZoneActivityComponent } from './zone-activity/zone-activity.component';
 
 const routes: Routes = [
   { path: '', component: LoginComponent },
@@ -19,6 +20,7 @@ const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent },
   { path: 'robot-speed', component: RobotSpeedComponent },
   { path: 'robot-intensity', component: RobotVibrationComponent },
+  { path: 'zone-activity', component: ZoneActivityComponent },
   // { path: '**', redirectTo: 'upload-map', pathMatch: 'full' },
 ];
 

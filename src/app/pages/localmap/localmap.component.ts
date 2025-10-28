@@ -2270,7 +2270,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const isRestricated = this.mapForm.controls['isRestricted'].value;
         const maxSpeed = this.mapForm.controls['maxSpeed'].value;
         const minSpeed = this.mapForm.controls['minSpeed'].value;
-
         const shapeMode = this.mapForm.controls['shapeMode'].value;
         const speedLimit = this.mapForm.controls['speedLimit'].value;
         const timeLimitMinutes =
