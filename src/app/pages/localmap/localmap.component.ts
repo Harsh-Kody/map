@@ -236,36 +236,23 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.combinedTracking = {};
     }
   }
-  private saveRobotData(robotId: string, stopTime: number, distance: number) {
-    const data = JSON.parse(localStorage.getItem('robotFenceData') || '{}');
-    const now = new Date().toISOString();
+  private saveRobotData(
+    robotId: string,
+    timestamp: number,
+    distance: number,
+    stops: number
+  ) {
+    const key = `robot_${robotId}_stats`;
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
 
-    // ✅ Ensure robot entry exists
-    if (!data[robotId]) {
-      data[robotId] = {
-        totalDistance: 0,
-        stops: [], // initialize stops array
-        lastUpdated: now,
-      };
-    }
-
-    // ✅ Ensure stops array exists (in case old data didn't have it)
-    if (!Array.isArray(data[robotId].stops)) {
-      data[robotId].stops = [];
-    }
-
-    // ✅ Update total distance and timestamp
-    data[robotId].totalDistance = distance;
-    data[robotId].lastUpdated = now;
-
-    // ✅ Add new stop entry
-    data[robotId].stops.push({
-      stopTime: new Date(stopTime).toISOString(),
-      distanceAtStop: distance,
+    stored.push({
+      timestamp,
+      distance,
+      stops,
+      hour: new Date(timestamp).toLocaleTimeString(),
     });
 
-    // ✅ Save back to localStorage
-    localStorage.setItem('robotFenceData', JSON.stringify(data));
+    localStorage.setItem(key, JSON.stringify(stored));
   }
 
   minMaxSpeedValidator(): ValidatorFn {
@@ -301,7 +288,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.loadCombinedData();
     // Load map image
     const blob = await this.mapStorage.getMap('mainMap');
-    console.log('blob', blob);
     if (blob) {
       const objectURL = URL.createObjectURL(blob);
       this.mapImageSrc = objectURL;
@@ -1031,15 +1017,20 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return;
     }
 
+    if (this.currentPolygon.length < 3) {
+      alert('Points must be greater than 2');
+      return;
+    }
+
     const fenceName = this.mapForm.controls['fenceName'].value;
     if (!fenceName) {
       alert('Please enter a name for the fence.');
       return;
     }
-
+    const closedPolygon = [...this.currentPolygon, this.currentPolygon[0]];
     const newShape: Shape = {
       mode: this.shapeMode!,
-      points: [...this.currentPolygon],
+      points: closedPolygon,
       name: fenceName,
       isDraggable: this.mapForm.controls['isDrag'].value,
       isResizable: this.mapForm.controls['isResize'].value,
@@ -2009,7 +2000,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const ctx = this.ctx!;
     const width = canvas.width / (window.devicePixelRatio || 1);
     const height = canvas.height / (window.devicePixelRatio || 1);
-    console.log('height', canvas.height);
     // console.log/('height', height);
     ctx.save();
     ctx.strokeStyle = '#ccc';
@@ -2962,7 +2952,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }
         }
       }
-      // this.updateRobotStats(r, ctx, x, y);
+
+      this.updateRobotStats(r, ctx, x, y);
       // --- Draw robot ---
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
       this.lastFenceState[robotId] = currentFence;
@@ -2977,81 +2968,99 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
     }
   }
-  // private updateRobotStats(
-  //   r: any,
-  //   ctx: CanvasRenderingContext2D,
-  //   x: number,
-  //   y: number
-  // ) {
-  //   const robotId = r.id;
-  //   const currentTime = new Date(r.timestamp).getTime();
-  //   console.log('robot stat', this.robotStats);
-  //   if (!this.robotStats[robotId]) {
-  //     this.robotStats[robotId] = {
-  //       positions: [],
-  //       totalDistance: 0,
-  //       stops: 0,
-  //       lastReset: currentTime,
-  //       lastUpdated: currentTime,
-  //       lastStopTime: 0, // ✅ Added property
-  //     };
-  //   }
+  private updateRobotStats(
+    r: any,
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number
+  ) {
+    const robotId = r.id;
+    const currentTime = new Date(r.timestamp).getTime();
 
-  //   const stats = this.robotStats[robotId];
+    if (!this.robotStats[robotId]) {
+      this.robotStats[robotId] = {
+        positions: [],
+        totalDistance: 0,
+        stops: 0,
+        lastReset: currentTime,
+        lastUpdated: currentTime,
+        lastStopTime: 0,
+      };
+    }
 
-  //   // 🔹 Reset stats every hour
-  //   if (currentTime - stats.lastReset >= 3600000) {
-  //     console.log(`🔄 Reset stats for ${robotId}`);
-  //     stats.positions = [];
-  //     stats.totalDistance = 0;
-  //     stats.stops = 0;
-  //     stats.lastReset = currentTime;
-  //     stats.lastUpdated = currentTime;
-  //   }
+    {
+    }
 
-  //   // 🔹 Store positions
-  //   stats.positions.push({ x: r.x, y: r.y, time: currentTime });
-  //   if (stats.positions.length > 50) stats.positions.shift();
+    const stats = this.robotStats[robotId];
 
-  //   // 🔹 Calculate distance moved
-  //   if (stats.positions.length > 1) {
-  //     const prev = stats.positions[stats.positions.length - 2];
-  //     const dx = r.x - prev.x;
-  //     const dy = r.y - prev.y;
-  //     const dist = Math.sqrt(dx * dx + dy * dy);
-  //     stats.totalDistance += dist;
-  //   }
+    // Reset every 1 hour
+    if (currentTime - stats.lastReset >= 3600000) {
+      console.log(`🔄 1-hour reset for ${robotId}`);
+      // Save the hour summary before resetting
+      // this.saveHourlyRobotData(robotId, stats.lastReset, stats.totalDistance, stats.stops);
+      this.saveRobotData(
+        robotId,
+        currentTime,
+        stats.totalDistance,
+        stats.stops
+      );
 
-  //   // 🔹 Detect stops (no significant movement)
-  //   if (stats.positions.length >= 5) {
-  //     const recent = stats.positions.slice(-5);
-  //     const moved = recent.some(
-  //       (p, i, arr) =>
-  //         i > 0 &&
-  //         (Math.abs(p.x - arr[i - 1].x) > 0.05 ||
-  //           Math.abs(p.y - arr[i - 1].y) > 0.05)
-  //     );
+      // Reset data
+      stats.positions = [];
+      stats.totalDistance = 0;
+      stats.stops = 0;
+      stats.lastReset = currentTime;
+    }
 
-  //     if (!moved) {
-  //       // Avoid duplicate stops
-  //       if (!stats.lastStopTime || currentTime - stats.lastStopTime > 5000) {
-  //         stats.stops += 1;
-  //         stats.lastStopTime = currentTime;
+    // 🔹 Record position
+    stats.positions.push({ x: r.x, y: r.y, time: currentTime });
+    if (stats.positions.length > 50) stats.positions.shift();
 
-  //         console.log(
-  //           `⛔ Robot ${robotId} stopped at ${new Date(
-  //             currentTime
-  //           ).toLocaleTimeString()}`
-  //         );
+    // 🔹 Calculate distance moved
+    if (stats.positions.length > 1) {
+      const prev = stats.positions[stats.positions.length - 2];
+      const dx = r.x - prev.x;
+      const dy = r.y - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      stats.totalDistance += dist;
+    }
 
-  //         // Save data with timestamp and distance
-  //         this.saveRobotData(robotId, currentTime, stats.totalDistance);
-  //       }
+    // 🔹 Detect stop (very little movement)
+    if (stats.positions.length >= 5) {
+      const recent = stats.positions.slice(-5);
+      const moved = recent.some(
+        (p, i, arr) =>
+          i > 0 &&
+          (Math.abs(p.x - arr[i - 1].x) > 0.05 ||
+            Math.abs(p.y - arr[i - 1].y) > 0.05)
+      );
 
-  //       stats.positions = [];
-  //     }
-  //   }
-  // }
+      if (!moved) {
+        // Avoid counting continuous stops
+        if (!stats.lastStopTime || currentTime - stats.lastStopTime > 10000) {
+          stats.stops += 1;
+          stats.lastStopTime = currentTime;
+
+          console.log(
+            `⛔ Robot ${robotId} stopped at ${new Date(
+              currentTime
+            ).toLocaleTimeString()}`
+          );
+
+          // Save stop data immediately
+          this.saveRobotData(
+            robotId,
+            currentTime,
+            stats.totalDistance,
+            stats.stops
+          );
+        }
+
+        // Clear recent positions to avoid repetitive stops
+        stats.positions = [];
+      }
+    }
+  }
 
   get allFenceSessions() {
     const result: any[] = [];
