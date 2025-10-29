@@ -206,6 +206,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       };
     };
   } = {};
+  private robotStats: {
+    [robotId: string]: {
+      positions: { x: number; y: number; time: number }[];
+      totalDistance: number;
+      stops: any;
+      lastReset: number;
+      lastUpdated: any;
+      lastStopTime?: any;
+    };
+  } = {};
   private readonly SPEED_VIOLATION_THROTTLE_MS = 8000;
   private saveCombinedData() {
     localStorage.setItem(
@@ -225,6 +235,37 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     } else {
       this.combinedTracking = {};
     }
+  }
+  private saveRobotData(robotId: string, stopTime: number, distance: number) {
+    const data = JSON.parse(localStorage.getItem('robotFenceData') || '{}');
+    const now = new Date().toISOString();
+
+    // ✅ Ensure robot entry exists
+    if (!data[robotId]) {
+      data[robotId] = {
+        totalDistance: 0,
+        stops: [], // initialize stops array
+        lastUpdated: now,
+      };
+    }
+
+    // ✅ Ensure stops array exists (in case old data didn't have it)
+    if (!Array.isArray(data[robotId].stops)) {
+      data[robotId].stops = [];
+    }
+
+    // ✅ Update total distance and timestamp
+    data[robotId].totalDistance = distance;
+    data[robotId].lastUpdated = now;
+
+    // ✅ Add new stop entry
+    data[robotId].stops.push({
+      stopTime: new Date(stopTime).toISOString(),
+      distanceAtStop: distance,
+    });
+
+    // ✅ Save back to localStorage
+    localStorage.setItem('robotFenceData', JSON.stringify(data));
   }
 
   minMaxSpeedValidator(): ValidatorFn {
@@ -1960,43 +2001,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         return;
       }
     }
-    // if (
-    //   this.shapeMode === 'free' &&
-    //   this.isDrawingShape &&
-    //   this.currentPolygon.length > 2
-    // ) {
-    //   const fenceName = this.mapForm.controls['fenceName'].value;
-    //   const isDrag = this.mapForm.controls['isDrag'].value;
-    //   const isResize = this.mapForm.controls['isResize'].value;
-    //   const color = this.mapForm.controls['color'].value;
-
-    //   if (!fenceName) {
-    //     alert('Please enter a name for the fence.');
-    //     return;
-    //   }
-
-    //   const newShape: Shape = {
-    //     mode: 'free',
-    //     points: [...this.currentPolygon],
-    //     name: fenceName,
-    //     isDraggable: isDrag,
-    //     isResizable: isResize,
-    //     color: color,
-    //   };
-
-    //   if (!this.doesShapeOverlap(newShape)) {
-    //     this.polygons.push(newShape);
-    //     localStorage.setItem('geoFences', JSON.stringify(this.polygons));
-    //   }
-
-    //   this.currentPolygon = [];
-    //   this.shapeMode = null;
-    //   this.isDrawingShape = false;
-    //   this.redraw();
-
-    //   // ✅ tell mouseup to skip saving
-    //   this.skipNextMouseUp = true;
-    // }
   }
   private drawGrid() {
     if (!this.gridEnabled) return;
@@ -2958,7 +2962,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }
         }
       }
-
+      // this.updateRobotStats(r, ctx, x, y);
       // --- Draw robot ---
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
       this.lastFenceState[robotId] = currentFence;
@@ -2973,6 +2977,81 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
     }
   }
+  // private updateRobotStats(
+  //   r: any,
+  //   ctx: CanvasRenderingContext2D,
+  //   x: number,
+  //   y: number
+  // ) {
+  //   const robotId = r.id;
+  //   const currentTime = new Date(r.timestamp).getTime();
+  //   console.log('robot stat', this.robotStats);
+  //   if (!this.robotStats[robotId]) {
+  //     this.robotStats[robotId] = {
+  //       positions: [],
+  //       totalDistance: 0,
+  //       stops: 0,
+  //       lastReset: currentTime,
+  //       lastUpdated: currentTime,
+  //       lastStopTime: 0, // ✅ Added property
+  //     };
+  //   }
+
+  //   const stats = this.robotStats[robotId];
+
+  //   // 🔹 Reset stats every hour
+  //   if (currentTime - stats.lastReset >= 3600000) {
+  //     console.log(`🔄 Reset stats for ${robotId}`);
+  //     stats.positions = [];
+  //     stats.totalDistance = 0;
+  //     stats.stops = 0;
+  //     stats.lastReset = currentTime;
+  //     stats.lastUpdated = currentTime;
+  //   }
+
+  //   // 🔹 Store positions
+  //   stats.positions.push({ x: r.x, y: r.y, time: currentTime });
+  //   if (stats.positions.length > 50) stats.positions.shift();
+
+  //   // 🔹 Calculate distance moved
+  //   if (stats.positions.length > 1) {
+  //     const prev = stats.positions[stats.positions.length - 2];
+  //     const dx = r.x - prev.x;
+  //     const dy = r.y - prev.y;
+  //     const dist = Math.sqrt(dx * dx + dy * dy);
+  //     stats.totalDistance += dist;
+  //   }
+
+  //   // 🔹 Detect stops (no significant movement)
+  //   if (stats.positions.length >= 5) {
+  //     const recent = stats.positions.slice(-5);
+  //     const moved = recent.some(
+  //       (p, i, arr) =>
+  //         i > 0 &&
+  //         (Math.abs(p.x - arr[i - 1].x) > 0.05 ||
+  //           Math.abs(p.y - arr[i - 1].y) > 0.05)
+  //     );
+
+  //     if (!moved) {
+  //       // Avoid duplicate stops
+  //       if (!stats.lastStopTime || currentTime - stats.lastStopTime > 5000) {
+  //         stats.stops += 1;
+  //         stats.lastStopTime = currentTime;
+
+  //         console.log(
+  //           `⛔ Robot ${robotId} stopped at ${new Date(
+  //             currentTime
+  //           ).toLocaleTimeString()}`
+  //         );
+
+  //         // Save data with timestamp and distance
+  //         this.saveRobotData(robotId, currentTime, stats.totalDistance);
+  //       }
+
+  //       stats.positions = [];
+  //     }
+  //   }
+  // }
 
   get allFenceSessions() {
     const result: any[] = [];

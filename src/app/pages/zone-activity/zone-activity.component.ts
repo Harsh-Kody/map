@@ -1,4 +1,5 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
+import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Chart } from 'chart.js';
 
 @Component({
@@ -6,21 +7,37 @@ import { Chart } from 'chart.js';
   templateUrl: './zone-activity.component.html',
   styleUrls: ['./zone-activity.component.scss'],
 })
-export class ZoneActivityComponent {
-  startDate!: string;
-  endDate!: string;
-  chart: any;
+export class ZoneActivityComponent implements OnInit {
+  chartPie: any;
+  chartBar: any;
+  filterForm!: FormGroup;
+
+  constructor(private fb: FormBuilder) {}
 
   ngOnInit() {
-    this.getFilteredData();
+    this.filterForm = this.fb.group({
+      date: ['', Validators.required],
+    });
+  }
+
+  hasError(controlName: string, errorName: string) {
+    return this.filterForm.get(controlName)?.hasError(errorName);
   }
 
   applyFilter() {
-    const data = this.getFilteredData();
-    this.loadChart(data);
+    if (this.filterForm.invalid) {
+      this.filterForm.markAllAsTouched();
+      return;
+    }
+
+    const { date } = this.filterForm.value;
+    const data = this.getFilteredData(date);
+
+    this.loadPieChart(data);
+    this.loadBarChart(data);
   }
 
-  private getFilteredData() {
+  private getFilteredData(selectedDate: string) {
     const raw = localStorage.getItem('robotFenceData');
     if (!raw) return { labels: [], dwell: [], violations: [] };
 
@@ -29,32 +46,22 @@ export class ZoneActivityComponent {
     const dwell: number[] = [];
     const violations: number[] = [];
 
-    // ✅ Adjust date range
-    const start = this.startDate
-      ? new Date(this.startDate + 'T00:00:00')
-      : new Date('2000-01-01');
-    const end = this.endDate
-      ? new Date(this.endDate + 'T23:59:59') // include full end day
-      : new Date('2100-01-01');
+    const start = new Date(selectedDate + 'T00:00:00');
+    const end = new Date(selectedDate + 'T23:59:59');
 
-    console.log('Start', start);
-    console.log('End', end);
-    for (const [zoneName, zoneData] of Object.entries<any>(parsed)) {
+    for (const [robotId, zoneData] of Object.entries<any>(parsed)) {
       for (const [fenceName, fenceData] of Object.entries<any>(zoneData)) {
         if (!fenceData) continue;
 
         let totalMinutes = 0;
         let violationCount = 0;
 
-        // ✅ Sessions check
+        // ✅ Dwell Time Calculation
         if (Array.isArray(fenceData.sessions)) {
           fenceData.sessions.forEach((s: any) => {
             const entry = s.entryTime ? new Date(s.entryTime) : null;
             const exit = s.exitTime ? new Date(s.exitTime) : null;
-            console.log('EntryTime', entry);
-            console.log('Exit', exit);
 
-            // ✅ Include if session overlaps the selected range
             if (
               (entry && entry <= end && (!exit || exit >= start)) ||
               (exit && exit >= start && exit <= end)
@@ -64,14 +71,11 @@ export class ZoneActivityComponent {
           });
         }
 
-        // ✅ Violations check
+        // ✅ Violations Calculation
         if (Array.isArray(fenceData.violations)) {
           fenceData.violations.forEach((v: any) => {
-            if (!v) return;
             const vt = v.time ? new Date(v.time) : null;
-            if (vt && vt >= start && vt <= end) {
-              violationCount++;
-            }
+            if (vt && vt >= start && vt <= end) violationCount++;
           });
         }
 
@@ -83,20 +87,68 @@ export class ZoneActivityComponent {
       }
     }
 
-    console.log('✅ Filtered Chart Data:', { labels, dwell, violations });
     return { labels, dwell, violations };
   }
 
-  private loadChart(data: {
+  private loadPieChart(data: { labels: string[]; dwell: number[] }) {
+    if (this.chartPie) this.chartPie.destroy();
+
+    const ctx = document.getElementById('fencePieChart') as HTMLCanvasElement;
+    if (!ctx) return;
+
+    this.chartPie = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: 'Dwell Time (min)',
+            data: data.dwell,
+            backgroundColor: [
+              '#36A2EB',
+              '#FF6384',
+              '#FFCE56',
+              '#4BC0C0',
+              '#9966FF',
+              '#FF9F40',
+            ],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right' },
+          title: { display: true, text: 'Time Spent by Location (Pie Chart)' },
+          tooltip: {
+            callbacks: {
+              label: (context: any) => {
+                const total = context.dataset.data.reduce(
+                  (acc: number, val: number) => acc + val,
+                  0
+                );
+                const value = context.parsed;
+                const percentage = ((value / total) * 100).toFixed(1);
+                return `${context.label}: ${value} min (${percentage}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  private loadBarChart(data: {
     labels: string[];
     dwell: number[];
     violations: number[];
   }) {
-    if (this.chart) this.chart.destroy();
-    const ctx = document.getElementById('fenceChart') as HTMLCanvasElement;
+    if (this.chartBar) this.chartBar.destroy();
+
+    const ctx = document.getElementById('fenceBarChart') as HTMLCanvasElement;
     if (!ctx) return;
 
-    this.chart = new Chart(ctx, {
+    this.chartBar = new Chart(ctx, {
       type: 'bar',
       data: {
         labels: data.labels,
@@ -105,13 +157,13 @@ export class ZoneActivityComponent {
             label: 'Dwell Time (min)',
             data: data.dwell,
             backgroundColor: 'rgba(54, 162, 235, 0.6)',
-            yAxisID: 'y', // Primary Y-axis
+            yAxisID: 'y',
           },
           {
             label: 'Violations',
             data: data.violations,
             backgroundColor: 'rgba(255, 99, 132, 0.6)',
-            yAxisID: 'y1', // Secondary Y-axis
+            yAxisID: 'y1',
           },
         ],
       },
@@ -121,26 +173,20 @@ export class ZoneActivityComponent {
           legend: { position: 'top' },
           title: {
             display: true,
-            text: 'Zone Activity Chart (Y-axis based on Dwell Time)',
+            text: 'Zone Activity (Dwell Time & Violations)',
           },
         },
         scales: {
           y: {
             beginAtZero: true,
             position: 'left',
-            title: {
-              display: true,
-              text: 'Dwell Time (min)',
-            },
+            title: { display: true, text: 'Dwell Time (min)' },
           },
           y1: {
             beginAtZero: true,
             position: 'right',
-            grid: { drawOnChartArea: false }, // keep grid lines clean
-            title: {
-              display: true,
-              text: 'Violations (count)',
-            },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Violations (count)' },
           },
         },
       },
