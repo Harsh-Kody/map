@@ -214,8 +214,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       lastReset: number;
       lastUpdated: any;
       lastStopTime?: any;
+      isStopped?: any;
     };
   } = {};
+  private lastSpeedViolationTime: { [key: string]: number } = {}; // Track last violation per robot
+
   private readonly SPEED_VIOLATION_THROTTLE_MS = 8000;
   private saveCombinedData() {
     localStorage.setItem(
@@ -444,6 +447,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         ],
         speedLimit: [null, [Validators.required, Validators.max(7)]],
         timeLimitMinutes: [null, [Validators.required]],
+        aisle: [false],
       },
       { validators: this.minMaxSpeedValidator() }
     );
@@ -496,6 +500,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDrag: true,
       isResize: true,
       isRestricted: false,
+      aisle: false,
       minSpeed: 0,
       maxSpeed: 10,
       timeLimitMinutes: 2,
@@ -1036,6 +1041,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResizable: this.mapForm.controls['isResize'].value,
       color: this.mapForm.controls['color'].value,
       isRestricted: this.mapForm.controls['isRestricted'].value,
+      aisle: this.mapForm.controls['aisle'].value,
       speedLimit: this.mapForm.controls['speedLimit'].value,
       maxSpeed: this.mapForm.controls['maxSpeed'].value,
       minSpeed: this.mapForm.controls['minSpeed'].value,
@@ -1176,6 +1182,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           isResizable: tool.isResize,
           name: tool.fenceName,
           isRestricted: tool.isRestricted,
+          aisle: tool.aisle,
           maxSpeed: tool.maxSpeed,
           minSpeed: tool.minSpeed,
           speedLimit: tool.speedLimit,
@@ -1339,6 +1346,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         isDraggable: this.mapForm.value.isDrag,
         isResizable: this.mapForm.value.isResize,
         isRestricted: this.mapForm.controls['isRestricted'].value,
+        aisle: this.mapForm.controls['aisle'].value,
         maxSpeed: this.mapForm.controls['maxSpeed'].value,
         minSpeed: this.mapForm.controls['minSpeed'].value,
 
@@ -1691,6 +1699,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isDraggable: this.mapForm.value.isDrag,
       isResizable: this.mapForm.value.isResize,
       isRestricted: this.mapForm.controls['isRestricted'].value,
+      aisle: this.mapForm.controls['aisle'].value,
       maxSpeed: this.mapForm.controls['maxSpeed'].value,
       minSpeed: this.mapForm.controls['minSpeed'].value,
       speedLimit: this.mapForm.controls['speedLimit'].value,
@@ -2245,6 +2254,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       isResize: this.selectedFence.isResizable || false,
       color: this.selectedFence.color || '#ff0000',
       isRestricated: this.selectedFence.isRestricted,
+      // aisle: this.selectedFence.aisle,
       shapeMode: this.selectedFence.shapeMode,
       speedLimit: this.selectedFence.speedLimit,
       timeLimitMinutes: this.selectedFence.timeLimitMinutes,
@@ -2262,6 +2272,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const isResize = this.mapForm.controls['isResize'].value;
         const color = this.mapForm.controls['color'].value;
         const isRestricated = this.mapForm.controls['isRestricted'].value;
+        // const aisle = this.mapForm.controls['aisle'].value;
         const maxSpeed = this.mapForm.controls['maxSpeed'].value;
         const minSpeed = this.mapForm.controls['minSpeed'].value;
         const shapeMode = this.mapForm.controls['shapeMode'].value;
@@ -2277,6 +2288,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.selectedFence.isResizable = isResize;
           this.selectedFence.color = color;
           this.selectedFence.isRestricted = isRestricated;
+          // this.selectedFence.aisle = aisle;
           this.selectedFence.minSpeed = minSpeed;
           this.selectedFence.maxSpeed = maxSpeed;
           this.selectedFence.shapeMode = shapeMode;
@@ -2646,327 +2658,294 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const radius = 6;
     const geofences = this.getStoredGeofences();
 
-    const hasRecentViolation = (
-      fenceData: any,
-      type: string,
-      intervalMs: number = 10000
-    ) => {
-      const violationsOfType = fenceData.violations.filter(
-        (v: any) => v.type === type
-      );
-      if (violationsOfType.length === 0) return false;
-      const last = violationsOfType[violationsOfType.length - 1];
-      return Date.now() - new Date(last.time).getTime() < intervalMs;
-    };
-
     for (const r of this.robots) {
       const { x, y } = this.toCanvasCoords(r.x, r.y);
       const robotId = r.id;
-      const timeStamp = new Date(r.timestamp).toISOString();
-      let dataChanged = false; // track if we actually need to save
+      const timestamp = new Date(r.timestamp).toISOString();
+      let dataChanged = false;
 
-      // Detect which fence robot is in
-      let insideFence: {
-        color: string;
-        name: string;
-        isRestricted?: boolean;
-        speedLimit?: number;
-        minSpeed?: number;
-        maxSpeed?: number;
-        timeLimitMinutes?: number;
-      } | null = null;
-
-      for (const gf of geofences) {
-        const point = { x: r.x, y: r.y };
-        let inFence = false;
-
-        if (gf.mode === 'square') {
-          inFence = this.isPointInPolygon(point, gf.points);
-        } else if (gf.mode === 'free' && gf.points?.length > 2)
-          inFence = this.isPointInPolygon(point, gf.points);
-        else if (gf.points?.length > 2)
-          inFence = this.isPointInPolygon(point, gf.points);
-
-        if (inFence) {
-          insideFence = {
-            color: gf.color || 'red',
-            name: gf.name || 'Unnamed Fence',
-            isRestricted: gf.isRestricted || false,
-            minSpeed: gf.minSpeed,
-            maxSpeed: gf.maxSpeed,
-            speedLimit: gf.speedLimit,
-            timeLimitMinutes: gf.timeLimitMinutes,
-          };
-          break;
-        }
-      }
-
+      const insideFence = this.detectFence(r, geofences);
       const currentFence = insideFence?.name || null;
       const previousFence = this.lastFenceState[robotId] || null;
 
-      // --- EXIT logic ---
-      if (previousFence && previousFence !== currentFence) {
-        const fenceData = this.combinedTracking[robotId]?.[previousFence];
-        const lastSession =
-          fenceData?.sessions?.[fenceData.sessions.length - 1];
-
-        if (lastSession && !lastSession.exitTime) {
-          lastSession.exitTime = timeStamp;
-          const entry = new Date(lastSession.entryTime).getTime();
-          const exit = new Date(timeStamp).getTime();
-          const sessionMinutes = (exit - entry) / 60000;
-
-          lastSession.durationMinutes = +sessionMinutes.toFixed(2);
-          fenceData.totalDwellMinutes = +(
-            (fenceData.totalDwellMinutes || 0) + sessionMinutes
-          ).toFixed(2);
-
-          fenceData.currentlyInside = false;
-          console.log(
-            `🚪 Robot ${robotId} exited ${previousFence} after ${lastSession.durationMinutes} min (total dwell: ${fenceData.totalDwellMinutes} min)`
-          );
-          dataChanged = true;
-        }
-
-        if (this.activeViolations[robotId]?.[previousFence]) {
-          delete this.activeViolations[robotId][previousFence];
-        }
-      }
-
-      // --- ENTRY logic ---
-      if (currentFence) {
-        if (!this.combinedTracking[robotId]) {
-          this.combinedTracking[robotId] = {};
-        }
-
-        if (!this.combinedTracking[robotId][currentFence]) {
-          this.combinedTracking[robotId][currentFence] = {
-            sessions: [],
-            totalDwellMinutes: 0,
-            violations: [],
-            currentlyInside: false,
-          };
-        }
-
-        const fenceData = this.combinedTracking[robotId][currentFence];
-
-        if (!fenceData.currentlyInside) {
-          fenceData.sessions.push({
-            entryTime: timeStamp,
-            exitTime: null,
-            durationMinutes: null,
-            hasTimeViolation: false,
-          });
-          fenceData.currentlyInside = true;
-          dataChanged = true;
-
-          if (!this.activeViolations[robotId]) {
-            this.activeViolations[robotId] = {};
-          }
-          this.activeViolations[robotId][currentFence] = {
-            timeViolationActive: false,
-            lastMaxSpeedViolationTime: undefined,
-            lastMinSpeedViolationTime: undefined,
-          };
-
-          console.log(`🟢 Robot ${robotId} entered ${currentFence}`);
-        }
-      }
-
-      // --- Restricted zone logic ---
-      if (insideFence?.isRestricted) {
-        this.drawRestrictedRobot(ctx, x, y, radius, insideFence.color);
-        if (
-          !this.restrictedToastShown[robotId] ||
-          previousFence !== currentFence
-        ) {
-          this.toastService.addNotification({
-            title: 'Restricted Zone Alert',
-            message: `🚫 Robot ${r.name || robotId} entered restricted fence: ${
-              insideFence.name
-            }`,
-            className: 'error',
-            robotId,
-          });
-
-          const fenceData = this.combinedTracking[robotId][insideFence.name];
-          fenceData.violations.push({
-            type: 'restricted-entry',
-            time: timeStamp,
-          });
-          dataChanged = true;
-
-          this.restrictedToastShown[robotId] = true;
-
-          if (this.restrictedReminderTimers[robotId]) {
-            clearInterval(this.restrictedReminderTimers[robotId]);
-          }
-          this.restrictedReminderTimers[robotId] = setInterval(() => {
-            if (this.lastFenceState[robotId] === insideFence!.name) {
-              this.toastService.addNotification({
-                title: 'Reminder',
-                message: `⚠️ Robot ${
-                  r.name || robotId
-                } is still inside restricted fence: ${insideFence!.name}`,
-                className: 'warning',
-                robotId,
-              });
-            }
-          }, 10000);
-        }
-      } else {
-        if (this.restrictedReminderTimers[robotId]) {
-          clearInterval(this.restrictedReminderTimers[robotId]);
-          delete this.restrictedReminderTimers[robotId];
-        }
-        this.restrictedToastShown[robotId] = false;
-      }
-
-      // --- Time-based stay violation ---
-      if (insideFence) {
-        const fenceData = this.combinedTracking[robotId]?.[insideFence.name];
-        const lastSession =
-          fenceData?.sessions?.[fenceData.sessions.length - 1];
-        if (lastSession && !lastSession.exitTime) {
-          const entryTime = new Date(lastSession.entryTime).getTime();
-          const currentRobotTime = new Date(r.timestamp).getTime();
-          let minutesInside = (currentRobotTime - entryTime) / 60000;
-
-          if (isNaN(minutesInside) || minutesInside < 0) {
-            minutesInside = (Date.now() - entryTime) / 60000;
-          }
-          minutesInside = Math.max(0, minutesInside);
-
-          const allowedDuration = insideFence.timeLimitMinutes || 2;
-          if (
-            minutesInside > allowedDuration &&
-            !lastSession.hasTimeViolation
-          ) {
-            this.toastService.addNotification({
-              title: 'Duration Violation',
-              message: `⏱️ Robot ${r.name || robotId} has been inside ${
-                insideFence.name
-              } for ${minutesInside.toFixed()} minutes (limit: ${allowedDuration} min)`,
-              className: 'duration',
-              robotId,
-            });
-
-            fenceData.violations.push({
-              type: 'time-violation',
-              limitMinutes: insideFence.timeLimitMinutes,
-              actualMinutes: +minutesInside.toFixed(2),
-              time: new Date().toISOString(),
-              sessionIndex: fenceData.sessions.length - 1,
-            });
-
-            lastSession.hasTimeViolation = true;
-            dataChanged = true;
-          }
-        }
-      }
-
-      // --- Speed logic ---
-      const calculatedSpeed = this.calculateSpeed(
+      dataChanged ||= this.handleFenceTransition(
         robotId,
-        r.x,
-        r.y,
-        r.timestamp
+        previousFence,
+        currentFence,
+        timestamp
       );
-      if (calculatedSpeed !== null) {
-        r.speed = calculatedSpeed;
-      }
-
-      if (insideFence && r.speed != null) {
-        const fenceData = this.combinedTracking[robotId]?.[insideFence.name];
-        const lastSession =
-          fenceData?.sessions?.[fenceData.sessions.length - 1];
-        if (fenceData && lastSession) {
-          const currentTime = Date.now();
-          const violationTracking =
-            this.activeViolations[robotId]?.[insideFence.name];
-
-          // Max Speed Violation
-          if (insideFence.maxSpeed && r.speed > insideFence.maxSpeed) {
-            const lastViolationTime =
-              violationTracking?.lastMaxSpeedViolationTime || 0;
-            if (
-              currentTime - lastViolationTime >=
-              this.SPEED_VIOLATION_THROTTLE_MS
-            ) {
-              this.toastService.addNotification({
-                title: '🚨 Overspeed Violation',
-                message: `Robot ${
-                  r.name || robotId
-                } exceeded maximum speed in ${
-                  insideFence.name
-                }: ${r.speed.toFixed(2)} m/s (limit: ${
-                  insideFence.maxSpeed
-                } m/s)`,
-                className: 'error',
-                robotId,
-              });
-
-              fenceData.violations.push({
-                type: 'max-speed-violation',
-                actualSpeed: +r.speed.toFixed(2),
-                limit: insideFence.maxSpeed,
-                time: new Date().toISOString(),
-                sessionIndex: fenceData.sessions.length - 1,
-              });
-
-              violationTracking.lastMaxSpeedViolationTime = currentTime;
-              dataChanged = true;
-            }
-          }
-
-          // Min Speed Violation
-          if (insideFence.minSpeed && r.speed < insideFence.minSpeed) {
-            const lastViolationTime =
-              violationTracking?.lastMinSpeedViolationTime || 0;
-            if (
-              currentTime - lastViolationTime >=
-              this.SPEED_VIOLATION_THROTTLE_MS
-            ) {
-              this.toastService.addNotification({
-                title: '⚠️ Low Speed Violation',
-                message: `Robot ${r.name || robotId} is moving too slow in ${
-                  insideFence.name
-                }: ${r.speed.toFixed(2)} m/s (limit: ${
-                  insideFence.minSpeed
-                } m/s)`,
-                className: 'warning',
-                robotId,
-              });
-
-              fenceData.violations.push({
-                type: 'min-speed-violation',
-                actualSpeed: +r.speed.toFixed(2),
-                limit: insideFence.minSpeed,
-                time: new Date().toISOString(),
-                sessionIndex: fenceData.sessions.length - 1,
-              });
-
-              violationTracking.lastMinSpeedViolationTime = currentTime;
-              dataChanged = true;
-            }
-          }
-        }
-      }
+      dataChanged ||= this.handleRestrictedZone(
+        r,
+        robotId,
+        insideFence,
+        ctx,
+        x,
+        y
+      );
+      dataChanged ||= this.handleTimeViolation(r, robotId, insideFence);
+      dataChanged ||= this.handleSpeedViolation(r, robotId, insideFence);
 
       this.updateRobotStats(r, ctx, x, y);
-      // --- Draw robot ---
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
       this.lastFenceState[robotId] = currentFence;
 
-      // ✅ Save only if there were actual data changes
-      if (dataChanged) {
-        this.saveCombinedData();
-      }
+      if (dataChanged) this.saveCombinedData();
 
       const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
-      const canvasYaw = -yaw;
-      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
+      this.drawCameraFOV(ctx, x, y, -yaw, 120, 100);
     }
+  }
+
+  /* ------------------- FENCE DETECTION ------------------- */
+  private detectFence(r: any, geofences: any[]) {
+    for (const gf of geofences) {
+      const point = { x: r.x, y: r.y };
+      const inFence = this.isPointInPolygon(point, gf.points);
+      if (inFence) {
+        return {
+          color: gf.color || 'red',
+          name: gf.name || 'Unnamed Fence',
+          isRestricted: gf.isRestricted || false,
+          minSpeed: gf.minSpeed,
+          maxSpeed: gf.maxSpeed,
+          timeLimitMinutes: gf.timeLimitMinutes,
+        };
+      }
+    }
+    return null;
+  }
+
+  /* ------------------- FENCE TRANSITION ------------------- */
+  private handleFenceTransition(
+    robotId: string,
+    prevFence: string | null,
+    currFence: string | null,
+    timestamp: string
+  ): boolean {
+    let changed = false;
+
+    // Exit logic
+    if (prevFence && prevFence !== currFence) {
+      const fenceData = this.combinedTracking[robotId]?.[prevFence];
+      const lastSession = fenceData?.sessions?.at(-1);
+      if (lastSession && !lastSession.exitTime) {
+        const entry = new Date(lastSession.entryTime).getTime();
+        const exit = new Date(timestamp).getTime();
+        const duration = (exit - entry) / 60000;
+
+        lastSession.exitTime = timestamp;
+        lastSession.durationMinutes = +duration.toFixed(2);
+        fenceData.totalDwellMinutes = +(
+          fenceData.totalDwellMinutes + duration
+        ).toFixed(2);
+        fenceData.currentlyInside = false;
+        changed = true;
+        console.log(
+          `🚪 ${robotId} exited ${prevFence} after ${duration.toFixed(2)} min`
+        );
+      }
+    }
+
+    // Entry logic
+    if (currFence) {
+      if (!this.combinedTracking[robotId]) this.combinedTracking[robotId] = {};
+      if (!this.combinedTracking[robotId][currFence]) {
+        this.combinedTracking[robotId][currFence] = {
+          sessions: [],
+          totalDwellMinutes: 0,
+          violations: [],
+          totalViolationsCount: 0,
+          currentlyInside: false,
+        };
+      }
+
+      const fenceData = this.combinedTracking[robotId][currFence];
+      if (!fenceData.currentlyInside) {
+        fenceData.sessions.push({
+          entryTime: timestamp,
+          exitTime: null,
+          durationMinutes: null,
+          hasTimeViolation: false,
+        });
+        fenceData.currentlyInside = true;
+        changed = true;
+        console.log(`🟢 ${robotId} entered ${currFence}`);
+      }
+    }
+
+    return changed;
+  }
+
+  /* ------------------- RESTRICTED ZONE ------------------- */
+  private handleRestrictedZone(
+    r: any,
+    robotId: string,
+    fence: any,
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number
+  ): boolean {
+    if (!fence?.isRestricted) return false;
+
+    const fenceData = this.ensureFenceData(robotId, fence.name);
+    this.drawRestrictedRobot(ctx, x, y, 6, fence.color);
+
+    if (!this.restrictedToastShown[robotId]) {
+      this.toastService.addNotification({
+        title: 'Restricted Zone',
+        message: `🚫 Robot ${r.name || robotId} entered restricted fence ${
+          fence.name
+        }`,
+        className: 'error',
+        robotId,
+      });
+
+      fenceData.violations.push({
+        type: 'restricted-entry',
+        time: new Date().toISOString(),
+      });
+      this.incrementViolationCount(robotId, fence.name);
+
+      this.restrictedToastShown[robotId] = true;
+      return true;
+    }
+    return false;
+  }
+
+  /* ------------------- TIME VIOLATION ------------------- */
+  private handleTimeViolation(r: any, robotId: string, fence: any): boolean {
+    if (!fence) return false;
+
+    const fenceData = this.combinedTracking[robotId]?.[fence.name];
+    const session = fenceData?.sessions?.at(-1);
+    if (!session || session.exitTime) return false;
+
+    const entry = new Date(session.entryTime).getTime();
+    const now = new Date(r.timestamp).getTime();
+    const minutesInside = (now - entry) / 60000;
+    const limit = fence.timeLimitMinutes || 2;
+
+    if (minutesInside > limit && !session.hasTimeViolation) {
+      this.toastService.addNotification({
+        title: 'Duration Violation',
+        message: `⏱️ ${r.name || robotId} stayed in ${
+          fence.name
+        } for ${minutesInside.toFixed()}m (limit: ${limit}m)`,
+        className: 'duration',
+        robotId,
+      });
+
+      fenceData.violations.push({
+        type: 'time-violation',
+        limitMinutes: limit,
+        actualMinutes: +minutesInside.toFixed(2),
+        time: new Date().toISOString(),
+      });
+      this.incrementViolationCount(robotId, fence.name);
+
+      session.hasTimeViolation = true;
+      return true;
+    }
+    return false;
+  }
+
+  /* ------------------- SPEED VIOLATION ------------------- */
+  private handleSpeedViolation(r: any, robotId: string, fence: any): boolean {
+    if (!fence) return false;
+
+    const fenceData = this.ensureFenceData(robotId, fence.name);
+    const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
+    if (speed === null) return false;
+
+    r.speed = speed;
+    let violated = false;
+
+    const now = Date.now();
+    const key = `${robotId}-${fence.name}`;
+
+    // 🔹 Throttle notifications
+    if (
+      this.lastSpeedViolationTime[key] &&
+      now - this.lastSpeedViolationTime[key] < this.SPEED_VIOLATION_THROTTLE_MS
+    ) {
+      return false; // Skip duplicate notifications within throttle period
+    }
+
+    // 🔹 Max speed violation
+    if (fence.maxSpeed && speed > fence.maxSpeed) {
+      fenceData.violations.push({
+        type: 'max-speed-violation',
+        actualSpeed: +speed.toFixed(2),
+        limit: fence.maxSpeed,
+        time: new Date().toISOString(),
+      });
+
+      this.incrementViolationCount(robotId, fence.name);
+
+      // 🟡 Toast Notification
+      this.toastService.addNotification({
+        title: 'Max Speed Violation',
+        message: `⚡ Robot ${r.name || robotId} exceeded max speed limit (${
+          fence.maxSpeed
+        }) with ${speed.toFixed(2)} units.`,
+        className: 'speed-warning',
+        robotId,
+      });
+
+      violated = true;
+    }
+
+    // 🔹 Min speed violation
+    if (fence.minSpeed && speed < fence.minSpeed) {
+      fenceData.violations.push({
+        type: 'min-speed-violation',
+        actualSpeed: +speed.toFixed(2),
+        limit: fence.minSpeed,
+        time: new Date().toISOString(),
+      });
+
+      this.incrementViolationCount(robotId, fence.name);
+
+      // 🟠 Toast Notification
+      this.toastService.addNotification({
+        title: 'Min Speed Violation',
+        message: `🐢 Robot ${r.name || robotId} is below min speed limit (${
+          fence.minSpeed
+        }) with ${speed.toFixed(2)} units.`,
+        className: 'speed-warning',
+        robotId,
+      });
+
+      violated = true;
+    }
+
+    if (violated) {
+      this.lastSpeedViolationTime[key] = now; // Update last violation time
+    }
+
+    return violated;
+  }
+  /* ------------------- FENCE DATA ------------------- */
+  private ensureFenceData(robotId: string, fenceName: string) {
+    if (!this.combinedTracking[robotId]) this.combinedTracking[robotId] = {};
+    if (!this.combinedTracking[robotId][fenceName]) {
+      this.combinedTracking[robotId][fenceName] = {
+        sessions: [],
+        totalDwellMinutes: 0,
+        violations: [],
+        totalViolationsCount: 0,
+        currentlyInside: false,
+      };
+    }
+    return this.combinedTracking[robotId][fenceName];
+  }
+
+  /* ------------------- VIOLATION COUNTER ------------------- */
+  private incrementViolationCount(robotId: string, fenceName: string) {
+    const fenceData = this.ensureFenceData(robotId, fenceName);
+    fenceData.totalViolationsCount = (fenceData.totalViolationsCount || 0) + 1;
+
+    // ✅ persist to localStorage
   }
   private updateRobotStats(
     r: any,
@@ -2977,6 +2956,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const robotId = r.id;
     const currentTime = new Date(r.timestamp).getTime();
 
+    // Initialize robot stats
     if (!this.robotStats[robotId]) {
       this.robotStats[robotId] = {
         positions: [],
@@ -2985,19 +2965,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         lastReset: currentTime,
         lastUpdated: currentTime,
         lastStopTime: 0,
+        isStopped: false, // ✅ NEW FLAG
       };
-    }
-
-    {
     }
 
     const stats = this.robotStats[robotId];
 
-    // Reset every 1 hour
+    // 🔹 Reset every 1 hour
     if (currentTime - stats.lastReset >= 3600000) {
       console.log(`🔄 1-hour reset for ${robotId}`);
-      // Save the hour summary before resetting
-      // this.saveHourlyRobotData(robotId, stats.lastReset, stats.totalDistance, stats.stops);
       this.saveRobotData(
         robotId,
         currentTime,
@@ -3005,7 +2981,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         stats.stops
       );
 
-      // Reset data
       stats.positions = [];
       stats.totalDistance = 0;
       stats.stops = 0;
@@ -3025,7 +3000,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       stats.totalDistance += dist;
     }
 
-    // 🔹 Detect stop (very little movement)
+    // 🔹 Detect stop or movement
     if (stats.positions.length >= 5) {
       const recent = stats.positions.slice(-5);
       const moved = recent.some(
@@ -3036,18 +3011,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       );
 
       if (!moved) {
-        // Avoid counting continuous stops
-        if (!stats.lastStopTime || currentTime - stats.lastStopTime > 10000) {
+        // Robot is currently stopped
+        if (!stats.isStopped) {
+          // ✅ Count a new stop ONLY if it just stopped
           stats.stops += 1;
+          stats.isStopped = true;
           stats.lastStopTime = currentTime;
 
           console.log(
             `⛔ Robot ${robotId} stopped at ${new Date(
               currentTime
-            ).toLocaleTimeString()}`
+            ).toLocaleTimeString()} (Total stops: ${stats.stops})`
           );
 
-          // Save stop data immediately
           this.saveRobotData(
             robotId,
             currentTime,
@@ -3055,9 +3031,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             stats.stops
           );
         }
-
-        // Clear recent positions to avoid repetitive stops
-        stats.positions = [];
+      } else {
+        // Robot is moving again — reset stop flag
+        if (stats.isStopped) {
+          console.log(`▶️ Robot ${robotId} started moving again`);
+        }
+        stats.isStopped = false;
       }
     }
   }

@@ -24,4 +24,5 @@ export interface Shape {
   timeLimitMinutes?: number;
   minSpeed?: number;
   maxSpeed?: number;
+  aisle?: any;
 }
