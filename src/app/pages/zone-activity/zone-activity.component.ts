@@ -11,7 +11,7 @@ import { LoginComponent } from '../../account/login/login.component';
 export class ZoneActivityComponent implements OnInit {
   chartPie: any;
   chartBar: any;
-  chartLine: any; // ✅ new
+  chartLine: any;
   filterForm!: FormGroup;
 
   constructor(private fb: FormBuilder) {}
@@ -34,14 +34,13 @@ export class ZoneActivityComponent implements OnInit {
 
     const { date } = this.filterForm.value;
     const data = this.getFilteredData(date);
-    const hourlyData = this.getHourlyData(date); // ✅ new
+    const hourlyData = this.getHourlyData(date);
 
     this.loadPieChart(data);
     this.loadBarChart(data);
-    this.loadLineChart(hourlyData); // ✅ new
+    this.loadLineChart(hourlyData);
   }
 
-  // ✅ Dwell + Violation Data (already present)
   private getFilteredData(selectedDate: string) {
     const raw = localStorage.getItem('robotFenceData');
     if (!raw) return { labels: [], dwell: [], violations: [] };
@@ -93,35 +92,29 @@ export class ZoneActivityComponent implements OnInit {
     return { labels, dwell, violations };
   }
 
-  // ✅ NEW: Hourly Data (Distance + Stops)
   private getHourlyData(selectedDate: string) {
-    // Adjust key to whatever you store hourly records under
     const raw = localStorage.getItem('robot_1_stats');
     if (!raw) return { labels: [], distance: [], stops: [] };
 
-    const parsed = JSON.parse(raw); // array of { distance, stops, timestamp, hour? ... }
+    const parsed = JSON.parse(raw);
     const start = new Date(selectedDate + 'T00:00:00').getTime();
     const end = new Date(selectedDate + 'T23:59:59').getTime();
 
-    // Map hour -> best (latest) record for that hour
     const latestPerHour: {
       [hour: number]: { distance: number; stops: number; ts: number };
     } = {};
 
     parsed.forEach((d: any) => {
-      // tolerant parse: accept number or numeric string
       const tsNum =
         typeof d.timestamp === 'number' ? d.timestamp : Number(d.timestamp);
       if (isNaN(tsNum)) return;
 
-      // ensure milliseconds timestamp; if your timestamps are seconds multiply by 1000
       const ts = tsNum;
       if (ts < start || ts > end) return;
 
       const date = new Date(ts);
       const hour = date.getHours(); // 0..23
 
-      // keep the record with the largest timestamp for this hour
       const existing = latestPerHour[hour];
       if (!existing || ts > existing.ts) {
         latestPerHour[hour] = {
@@ -132,13 +125,11 @@ export class ZoneActivityComponent implements OnInit {
       }
     });
 
-    // Sort hours ascending and build arrays
     const hours = Object.keys(latestPerHour)
       .map((h) => Number(h))
       .sort((a, b) => a - b);
 
     const labels = hours.map((h) => {
-      // format like "3 PM" or "15:00" — here as "3:00" (24-hour). Change if you want AM/PM.
       return `${h}:00`;
     });
 
@@ -148,7 +139,6 @@ export class ZoneActivityComponent implements OnInit {
     return { labels, distance, stops };
   }
 
-  // ✅ PIE CHART
   private loadPieChart(data: { labels: string[]; dwell: number[] }) {
     if (this.chartPie) this.chartPie.destroy();
     const ctx = document.getElementById('fencePieChart') as HTMLCanvasElement;

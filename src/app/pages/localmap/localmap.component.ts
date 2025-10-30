@@ -626,7 +626,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const top = this.offsetY;
     const bottom = this.offsetY + height;
 
-    // ✅ If image is completely outside canvas bounds
+    //  If image is completely outside canvas bounds
     if (right < 0 || left > canvas.width || bottom < 0 || top > canvas.height) {
       return true;
     }
@@ -841,7 +841,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           x: p.x + dx,
           y: p.y + dy,
         }));
-        // ✅ Clamp entire polygon
+        //  Clamp entire polygon
         const minX = Math.min(...movedPoints.map((p) => p.x));
         const minY = Math.min(...movedPoints.map((p) => p.y));
         const maxX = Math.max(...movedPoints.map((p) => p.x));
@@ -1047,6 +1047,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       minSpeed: this.mapForm.controls['minSpeed'].value,
       timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
     };
+
     if (!this.doesShapeOverlap(newShape)) {
       this.polygons.push(newShape);
       // REPLACE THIS LINE:
@@ -1054,7 +1055,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const shapeCopy = JSON.parse(JSON.stringify(s));
         return this.convertSquareToPoints(shapeCopy);
       });
-      localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
+      console.log('AISLE', newShape.aisle);
+      if (newShape.aisle) {
+        localStorage.setItem('aisleVisit', JSON.stringify(shapesToSave));
+      } else {
+        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
+      }
     } else {
       alert('shape is overlapped existing shape');
     }
@@ -1116,7 +1122,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.endY! += dy;
         }
 
-        // ✅ Give unique name
+        //  Give unique name
         if (this.copiedShapeTemplate.name) {
           const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, '');
           let counter = 1;
@@ -1130,7 +1136,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.name = 'Shape 1';
         }
 
-        // ✅ Prevent overlap
+        //  Prevent overlap
         if (this.doesShapeOverlap(newShape)) {
           alert('Cannot place copy: it overlaps with an existing shape.');
           this.copyMode = false;
@@ -1138,7 +1144,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           return;
         }
 
-        // ✅ Save
+        //  Save
         this.polygons.push(newShape);
         // REPLACE THIS LINE:
         const shapesToSave = this.polygons.map((s) => {
@@ -1165,10 +1171,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (this.pendingTool) {
       const tool = this.pendingTool;
       let newShape: Shape | null = null;
-      const topLeft = { x, y };
-      const topRight = { x: x + tool.squareSize, y };
-      const bottomRight = { x: x + tool.squareSize, y: y + tool.squareSize };
-      const bottomLeft = { x, y: y + tool.squareSize };
       if (tool.shapeMode === 'square') {
         // Directly create fixed square on click
         newShape = {
@@ -1187,7 +1189,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           minSpeed: tool.minSpeed,
           speedLimit: tool.speedLimit,
           timeLimitMinutes: tool.timeLimitMinutes,
-          // points: [topLeft, topRight, bottomRight, bottomLeft],
         };
         this.gridEnabled = false;
         this.normalizeSquare(newShape);
@@ -1539,6 +1540,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.ctx.restore();
     }
+
     if (this.markers && this.toggleMarker) {
       this.markers.forEach((marker) => {
         const c = this.toCanvasCoords(marker.x, marker.y);
@@ -1860,6 +1862,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       if (!this.doesShapeOverlap(placedShape)) {
         this.polygons.push(placedShape);
+        console.log('placed shape', placedShape);
         const shapesToSave = this.polygons.map((s) => {
           const shapeCopy = JSON.parse(JSON.stringify(s));
           return this.convertSquareToPoints(shapeCopy);
@@ -2663,6 +2666,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const robotId = r.id;
       const timestamp = new Date(r.timestamp).toISOString();
       let dataChanged = false;
+      const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
+      if (speed) {
+        r.speed = speed;
+      }
 
       const insideFence = this.detectFence(r, geofences);
       const currentFence = insideFence?.name || null;
@@ -2696,7 +2703,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
   }
 
-  /* ------------------- FENCE DETECTION ------------------- */
+  /*  FENCE DETECTION  */
   private detectFence(r: any, geofences: any[]) {
     for (const gf of geofences) {
       const point = { x: r.x, y: r.y };
@@ -2715,7 +2722,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return null;
   }
 
-  /* ------------------- FENCE TRANSITION ------------------- */
+  /*  FENCE TRANSITION  */
   private handleFenceTransition(
     robotId: string,
     prevFence: string | null,
@@ -2740,9 +2747,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         ).toFixed(2);
         fenceData.currentlyInside = false;
         changed = true;
-        console.log(
-          `🚪 ${robotId} exited ${prevFence} after ${duration.toFixed(2)} min`
-        );
       }
     }
 
@@ -2769,14 +2773,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         });
         fenceData.currentlyInside = true;
         changed = true;
-        console.log(`🟢 ${robotId} entered ${currFence}`);
       }
     }
 
     return changed;
   }
 
-  /* ------------------- RESTRICTED ZONE ------------------- */
+  /*  RESTRICTED ZONE  */
   private handleRestrictedZone(
     r: any,
     robotId: string,
@@ -2812,7 +2815,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return false;
   }
 
-  /* ------------------- TIME VIOLATION ------------------- */
+  /*  TIME VIOLATION  */
   private handleTimeViolation(r: any, robotId: string, fence: any): boolean {
     if (!fence) return false;
 
@@ -2849,7 +2852,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return false;
   }
 
-  /* ------------------- SPEED VIOLATION ------------------- */
+  /*  SPEED VIOLATION  */
   private handleSpeedViolation(r: any, robotId: string, fence: any): boolean {
     if (!fence) return false;
 
@@ -2863,7 +2866,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const now = Date.now();
     const key = `${robotId}-${fence.name}`;
 
-    // 🔹 Throttle notifications
+    //  Throttle notifications
     if (
       this.lastSpeedViolationTime[key] &&
       now - this.lastSpeedViolationTime[key] < this.SPEED_VIOLATION_THROTTLE_MS
@@ -2871,7 +2874,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return false; // Skip duplicate notifications within throttle period
     }
 
-    // 🔹 Max speed violation
+    //  Max speed violation
     if (fence.maxSpeed && speed > fence.maxSpeed) {
       fenceData.violations.push({
         type: 'max-speed-violation',
@@ -2882,7 +2885,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.incrementViolationCount(robotId, fence.name);
 
-      // 🟡 Toast Notification
+      //  Toast Notification
       this.toastService.addNotification({
         title: 'Max Speed Violation',
         message: `⚡ Robot ${r.name || robotId} exceeded max speed limit (${
@@ -2895,7 +2898,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       violated = true;
     }
 
-    // 🔹 Min speed violation
+    //  Min speed violation
     if (fence.minSpeed && speed < fence.minSpeed) {
       fenceData.violations.push({
         type: 'min-speed-violation',
@@ -2906,7 +2909,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       this.incrementViolationCount(robotId, fence.name);
 
-      // 🟠 Toast Notification
+      //  Toast Notification
       this.toastService.addNotification({
         title: 'Min Speed Violation',
         message: `🐢 Robot ${r.name || robotId} is below min speed limit (${
@@ -2925,7 +2928,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     return violated;
   }
-  /* ------------------- FENCE DATA ------------------- */
+  /*  FENCE DATA  */
   private ensureFenceData(robotId: string, fenceName: string) {
     if (!this.combinedTracking[robotId]) this.combinedTracking[robotId] = {};
     if (!this.combinedTracking[robotId][fenceName]) {
@@ -2940,12 +2943,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     return this.combinedTracking[robotId][fenceName];
   }
 
-  /* ------------------- VIOLATION COUNTER ------------------- */
+  /*  VIOLATION COUNTER  */
   private incrementViolationCount(robotId: string, fenceName: string) {
     const fenceData = this.ensureFenceData(robotId, fenceName);
     fenceData.totalViolationsCount = (fenceData.totalViolationsCount || 0) + 1;
 
-    // ✅ persist to localStorage
+    //  persist to localStorage
   }
   private updateRobotStats(
     r: any,
@@ -2965,13 +2968,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         lastReset: currentTime,
         lastUpdated: currentTime,
         lastStopTime: 0,
-        isStopped: false, // ✅ NEW FLAG
+        isStopped: false, //  NEW FLAG
       };
     }
 
     const stats = this.robotStats[robotId];
 
-    // 🔹 Reset every 1 hour
+    //  Reset every 1 hour
     if (currentTime - stats.lastReset >= 3600000) {
       console.log(`🔄 1-hour reset for ${robotId}`);
       this.saveRobotData(
@@ -2987,11 +2990,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       stats.lastReset = currentTime;
     }
 
-    // 🔹 Record position
+    //  Record position
     stats.positions.push({ x: r.x, y: r.y, time: currentTime });
     if (stats.positions.length > 50) stats.positions.shift();
 
-    // 🔹 Calculate distance moved
+    //  Calculate distance moved
     if (stats.positions.length > 1) {
       const prev = stats.positions[stats.positions.length - 2];
       const dx = r.x - prev.x;
@@ -3000,7 +3003,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       stats.totalDistance += dist;
     }
 
-    // 🔹 Detect stop or movement
+    //  Detect stop or movement
     if (stats.positions.length >= 5) {
       const recent = stats.positions.slice(-5);
       const moved = recent.some(
@@ -3013,16 +3016,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       if (!moved) {
         // Robot is currently stopped
         if (!stats.isStopped) {
-          // ✅ Count a new stop ONLY if it just stopped
+          //  Count a new stop ONLY if it just stopped
           stats.stops += 1;
           stats.isStopped = true;
           stats.lastStopTime = currentTime;
-
-          console.log(
-            `⛔ Robot ${robotId} stopped at ${new Date(
-              currentTime
-            ).toLocaleTimeString()} (Total stops: ${stats.stops})`
-          );
 
           this.saveRobotData(
             robotId,
@@ -3032,9 +3029,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           );
         }
       } else {
-        // Robot is moving again — reset stop flag
+        // Robot is moving again reset the flag
         if (stats.isStopped) {
-          console.log(`▶️ Robot ${robotId} started moving again`);
         }
         stats.isStopped = false;
       }
