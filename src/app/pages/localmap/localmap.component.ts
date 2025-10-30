@@ -135,6 +135,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
   closestPedestrians: any;
+  aisleStore: any[] = [];
   lastX = 0;
   lastY = 0;
   lastZ = 0;
@@ -436,6 +437,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         color: ['#ff0000', Validators.required],
         isRestricted: [false],
         isDrag: [true],
+        aisle: [false],
         isResize: [true],
         maxSpeed: [
           null,
@@ -447,7 +449,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         ],
         speedLimit: [null, [Validators.required, Validators.max(7)]],
         timeLimitMinutes: [null, [Validators.required]],
-        aisle: [false],
       },
       { validators: this.minMaxSpeedValidator() }
     );
@@ -524,6 +525,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
       } else {
         this.pendingTool = this.mapForm.value;
+        console.log('pendingtool', this.pendingTool);
         this.gridEnabled = true; // <--- ENABLE GRID HERE
       }
       modal.close();
@@ -542,17 +544,31 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.fitImageToCanvas();
       this.saveOriginalState();
       const saved = localStorage.getItem('geoFences');
-      this.polygons = saved
-        ? JSON.parse(saved).map((s: any) => {
-            const shape = {
-              ...s,
-              isDraggable: s.isDraggable === true,
-              isResizable: s.isResizable === true,
-            };
-            // Convert points to startX/endX for internal use
-            return this.convertPointsToSquare(shape);
-          })
-        : [];
+
+      const Aisle = localStorage.getItem('aisleVisit');
+      if (Aisle) {
+        this.aisleStore = JSON.parse(Aisle).map((s: any) => {
+          const shape = {
+            ...s,
+            isDraggable: s.isDraggable === true,
+            isResizable: s.isResizable === true,
+          };
+          // Convert points to startX/endX for internal use
+          return this.convertPointsToSquare(shape);
+        });
+      }
+      if (saved) {
+        this.polygons = JSON.parse(saved).map((s: any) => {
+          const shape = {
+            ...s,
+            isDraggable: s.isDraggable === true,
+            isResizable: s.isResizable === true,
+          };
+
+          // Convert points to startX/endX for internal use
+          return this.convertPointsToSquare(shape);
+        });
+      }
       // this.carSocket.updateFences(this.polygons);
       this.redraw();
     };
@@ -1050,14 +1066,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     if (!this.doesShapeOverlap(newShape)) {
       this.polygons.push(newShape);
-      // REPLACE THIS LINE:
       const shapesToSave = this.polygons.map((s) => {
         const shapeCopy = JSON.parse(JSON.stringify(s));
         return this.convertSquareToPoints(shapeCopy);
       });
-      console.log('AISLE', newShape.aisle);
       if (newShape.aisle) {
-        localStorage.setItem('aisleVisit', JSON.stringify(shapesToSave));
+        this.aisleStore.push(newShape);
+        const shapeToSaveArray = this.aisleStore.map((ai) => {
+          const aisleShape = JSON.parse(JSON.stringify(ai));
+          return this.convertSquareToPoints(aisleShape);
+        });
+        localStorage.setItem('aisleVisit', JSON.stringify(shapeToSaveArray));
       } else {
         localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
       }
@@ -1080,13 +1099,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     for (let shape of this.polygons) {
       if (this.isPointInShape({ x, y }, shape)) {
         this.selectedFence = shape; // <-- Set selected fence here
-        this.redraw(); // Optional: highlight selected fence
+        this.redraw();
         // return;
       }
     }
     if (this.copyMode) {
       if (!this.copiedShapeTemplate) {
-        // Step 1: select a shape to copy
         for (let i = this.polygons.length - 1; i >= 0; i--) {
           if (this.isPointInShape({ x, y }, this.polygons[i])) {
             this.copiedShapeTemplate = JSON.parse(
@@ -1097,13 +1115,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }
         }
       } else {
-        // Step 2: place copy
         const newShape: Shape = JSON.parse(
           JSON.stringify(this.copiedShapeTemplate)
         );
 
         if (newShape.mode === 'free' && newShape.points) {
-          // Use first point as reference
           const firstPoint = newShape.points[0];
           const dx = x - firstPoint.x;
           const dy = y - firstPoint.y;
@@ -1113,7 +1129,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             y: p.y + dy,
           }));
         } else {
-          // Default (square, circle, etc.)
           const dx = x - newShape.startX!;
           const dy = y - newShape.startY!;
           newShape.startX! += dx;
@@ -1122,7 +1137,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.endY! += dy;
         }
 
-        //  Give unique name
         if (this.copiedShapeTemplate.name) {
           const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, '');
           let counter = 1;
@@ -1136,7 +1150,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.name = 'Shape 1';
         }
 
-        //  Prevent overlap
         if (this.doesShapeOverlap(newShape)) {
           alert('Cannot place copy: it overlaps with an existing shape.');
           this.copyMode = false;
@@ -1146,6 +1159,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
         //  Save
         this.polygons.push(newShape);
+
         // REPLACE THIS LINE:
         const shapesToSave = this.polygons.map((s) => {
           const shapeCopy = JSON.parse(JSON.stringify(s));
@@ -1214,7 +1228,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
               const shapeCopy = JSON.parse(JSON.stringify(s));
               return this.convertSquareToPoints(shapeCopy);
             });
-            localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
+            if (newShape.aisle) {
+              this.aisleStore.push(newShape);
+              const shapesToSaveArray = this.aisleStore.map((s) => {
+                const shapeCopy = JSON.parse(JSON.stringify(s));
+                return this.convertSquareToPoints(shapeCopy);
+              });
+              localStorage.setItem(
+                'aisleVisit',
+                JSON.stringify(shapesToSaveArray)
+              );
+            } else {
+              localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
+            }
             this.redraw();
           }
         } else {
@@ -1350,7 +1376,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         aisle: this.mapForm.controls['aisle'].value,
         maxSpeed: this.mapForm.controls['maxSpeed'].value,
         minSpeed: this.mapForm.controls['minSpeed'].value,
-
         speedLimit: this.mapForm.controls['speedLimit'].value,
         timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
       } as Shape;
@@ -1468,7 +1493,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     // draw image at CSS size
     ctx.drawImage(img, this.offsetX, this.offsetY, cssW, cssH);
     this.drawRobotPath();
-
+    // console.log('POl', this.polygons);
     this.polygons.forEach((shape) => {
       const strokeColor = shape.color;
       const fillColor = shape.color
@@ -1477,6 +1502,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawShape(shape, fillColor, strokeColor);
       if (shape.name) this.drawShapeLabel(shape);
     });
+
     if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
       if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
         this.selectedColor = this.mapForm.get('color')?.value;
@@ -2251,19 +2277,21 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapCanvas.nativeElement.style.cursor = 'default';
     } catch (e) {}
 
+    this.mapForm.get('aisle')?.disable();
     this.mapForm.patchValue({
-      fenceName: this.selectedFence.name || '',
+      fenceName: this.selectedFence.name || 'sfsfs',
       isDrag: this.selectedFence.isDraggable || false,
       isResize: this.selectedFence.isResizable || false,
       color: this.selectedFence.color || '#ff0000',
       isRestricated: this.selectedFence.isRestricted,
-      // aisle: this.selectedFence.aisle,
+      aisle: this.selectedFence.aisle,
       shapeMode: this.selectedFence.shapeMode,
       speedLimit: this.selectedFence.speedLimit,
       timeLimitMinutes: this.selectedFence.timeLimitMinutes,
       maxSpeed: this.selectedFence.maxSpeed,
       minSpeed: this.selectedFence.minSpeed,
     });
+    console.log('map', this.mapForm.value);
     const modalRef = this.modalService.open(this.geofenceToolModal, {
       backdrop: 'static',
     });
@@ -2275,7 +2303,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         const isResize = this.mapForm.controls['isResize'].value;
         const color = this.mapForm.controls['color'].value;
         const isRestricated = this.mapForm.controls['isRestricted'].value;
-        // const aisle = this.mapForm.controls['aisle'].value;
+        const aisle = this.mapForm.controls['aisle'].value;
         const maxSpeed = this.mapForm.controls['maxSpeed'].value;
         const minSpeed = this.mapForm.controls['minSpeed'].value;
         const shapeMode = this.mapForm.controls['shapeMode'].value;
@@ -2291,13 +2319,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.selectedFence.isResizable = isResize;
           this.selectedFence.color = color;
           this.selectedFence.isRestricted = isRestricated;
-          // this.selectedFence.aisle = aisle;
+          this.selectedFence.aisle = aisle;
           this.selectedFence.minSpeed = minSpeed;
           this.selectedFence.maxSpeed = maxSpeed;
           this.selectedFence.shapeMode = shapeMode;
           this.selectedFence.speedLimit = speedLimit;
           this.selectedFence.timeLimitMinutes = timeLimitMinutes;
         }
+        console.log('Selected Fence', this.selectedFence);
         const idx = this.polygons.indexOf(this.selectedFence!);
 
         if (this.doesShapeOverlap(this.selectedFence!, idx)) {

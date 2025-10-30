@@ -1,38 +1,54 @@
-<div class="card shadow-sm p-4 rounded-3">
-    <h5 class="fw-semibold mb-3">Zone Activity Summary</h5>
+<div class="card shadow-sm border-0 p-4 rounded-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-semibold mb-0">📊 Zone Activity Summary</h5>
+    </div>
 
     <!-- 🔹 Date Filter -->
     <form [formGroup]="filterForm" (ngSubmit)="applyFilter()" #formSub="ngForm">
-        <div class="row align-items-end mb-4 g-3">
-            <div class="col-md-6 col-sm-8">
-                <label class="form-label mb-1">Select Date</label>
-                <input type="date" formControlName="date" class="form-control form-control-sm" />
+        <div class="row g-3 align-items-end mb-4">
+            <div class="col-md-6">
+                <label class="form-label fw-semibold">Select Date</label>
+                <input type="date" formControlName="date" class="form-control form-control-sm shadow-sm" />
                 @if (formSub.submitted && hasError('date', 'required')) {
-                <div class="text-danger mt-1">Date is required.</div>
+                <div class="text-danger small mt-1">Date is required.</div>
                 }
             </div>
 
-            <div class="col-md-6 text-end">
-                <button class="btn btn-primary btn-sm" type="submit">Apply Filter</button>
+            <div class="col-md-6 text-md-end text-start">
+                <button class="btn btn-primary btn-sm px-4 shadow-sm" type="submit" [disabled]="filterForm.invalid">
+                    <i class="bi bi-funnel"></i> Apply Filter
+                </button>
             </div>
         </div>
     </form>
 
-    <!-- 🔹 Charts -->
-    <div class="row">
-        <div class="col-md-6">
-            <div class="chart-container" style="height: 300px">
-                <canvas id="fencePieChart"></canvas>
+    <!-- 🔹 Charts Section -->
+    <div class="row g-4">
+        <div class="col-lg-6 col-md-12">
+            <div class="p-3 bg-light rounded-3 shadow-sm h-100">
+                <h6 class="fw-semibold text-secondary mb-3 text-center">Fence Utilization</h6>
+                <div class="chart-container" style="height: 300px">
+                    <canvas id="fencePieChart"></canvas>
+                </div>
             </div>
         </div>
 
-        <div class="col-md-6">
-            <div class="chart-container" style="height: 250px">
-                <canvas id="fenceBarChart"></canvas>
+        <div class="col-lg-6 col-md-12">
+            <div class="p-3 bg-light rounded-3 shadow-sm h-100">
+                <h6 class="fw-semibold text-secondary mb-3 text-center">Fence Activity</h6>
+                <div class="chart-container" style="height: 300px">
+                    <canvas id="fenceBarChart"></canvas>
+                </div>
             </div>
         </div>
-        <div class="chart-container" style="height: 250px">
-            <canvas id="hourlyLineChart"></canvas>
+
+        <div class="col-12">
+            <div class="p-3 bg-light rounded-3 shadow-sm">
+                <h6 class="fw-semibold text-secondary mb-3 text-center">Hourly Activity</h6>
+                <div class="chart-container" style="height: 300px">
+                    <canvas id="hourlyLineChart"></canvas>
+                </div>
+            </div>
         </div>
     </div>
 </div>
