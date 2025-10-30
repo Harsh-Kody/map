@@ -12,6 +12,7 @@ export class ZoneActivityComponent implements OnInit {
   chartPie: any;
   chartBar: any;
   chartLine: any;
+  chartAisle: any;
   filterForm!: FormGroup;
 
   constructor(private fb: FormBuilder) {}
@@ -39,6 +40,7 @@ export class ZoneActivityComponent implements OnInit {
     this.loadPieChart(data);
     this.loadBarChart(data);
     this.loadLineChart(hourlyData);
+    this.loadAisleVisitChart(date);
   }
 
   private getFilteredData(selectedDate: string) {
@@ -279,6 +281,70 @@ export class ZoneActivityComponent implements OnInit {
             beginAtZero: true,
             grid: { drawOnChartArea: false },
             title: { display: true, text: 'Stops (count)' },
+          },
+        },
+      },
+    });
+  }
+  private loadAisleVisitChart(selectedDate?: string) {
+    const raw = localStorage.getItem('aisleVisits');
+    if (!raw) return;
+
+    const aisleVisits = JSON.parse(raw);
+    console.log('Selected', selectedDate);
+    const start = selectedDate
+      ? new Date(selectedDate + 'T00:00:00').getTime()
+      : 0;
+    const end = selectedDate
+      ? new Date(selectedDate + 'T23:59:59').getTime()
+      : Infinity;
+    console.log('Start', start);
+    console.log('End', end);
+    const labels: string[] = [];
+    const counts: number[] = [];
+
+    for (const [aisle, data] of Object.entries<any>(aisleVisits)) {
+      if (!data.timestamps) continue;
+      const countForDate = data.timestamps.filter((t: string) => {
+        const ts = new Date(t).getTime();
+        return ts >= start && ts <= end;
+      }).length;
+
+      if (countForDate > 0) {
+        labels.push(aisle);
+        counts.push(countForDate);
+      }
+    }
+
+    if (this.chartAisle) this.chartAisle.destroy();
+
+    const ctx = document.getElementById('aisleVisitChart') as HTMLCanvasElement;
+    if (!ctx) return;
+
+    this.chartAisle = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Visit Count',
+            data: counts,
+            backgroundColor: 'rgba(255, 159, 64, 0.6)',
+            borderColor: 'rgba(255, 159, 64, 1)',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: 'Aisle Visit Frequency' },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Number of Visits' },
           },
         },
       },

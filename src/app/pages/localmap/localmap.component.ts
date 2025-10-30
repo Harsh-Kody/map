@@ -135,7 +135,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
   closestPedestrians: any;
-  aisleStore: any[] = [];
   lastX = 0;
   lastY = 0;
   lastZ = 0;
@@ -227,6 +226,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       JSON.stringify(this.combinedTracking)
     );
   }
+  private lastAisleState: Record<string, string | null> = {};
+
   private loadCombinedData() {
     const data = localStorage.getItem('robotFenceData');
     if (data) {
@@ -544,31 +545,18 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.fitImageToCanvas();
       this.saveOriginalState();
       const saved = localStorage.getItem('geoFences');
+      this.polygons = saved
+        ? JSON.parse(saved).map((s: any) => {
+            const shape = {
+              ...s,
+              isDraggable: s.isDraggable === true,
+              isResizable: s.isResizable === true,
+            };
+            // Convert points to startX/endX for internal use
+            return this.convertPointsToSquare(shape);
+          })
+        : [];
 
-      const Aisle = localStorage.getItem('aisleVisit');
-      if (Aisle) {
-        this.aisleStore = JSON.parse(Aisle).map((s: any) => {
-          const shape = {
-            ...s,
-            isDraggable: s.isDraggable === true,
-            isResizable: s.isResizable === true,
-          };
-          // Convert points to startX/endX for internal use
-          return this.convertPointsToSquare(shape);
-        });
-      }
-      if (saved) {
-        this.polygons = JSON.parse(saved).map((s: any) => {
-          const shape = {
-            ...s,
-            isDraggable: s.isDraggable === true,
-            isResizable: s.isResizable === true,
-          };
-
-          // Convert points to startX/endX for internal use
-          return this.convertPointsToSquare(shape);
-        });
-      }
       // this.carSocket.updateFences(this.polygons);
       this.redraw();
     };
@@ -1066,20 +1054,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     if (!this.doesShapeOverlap(newShape)) {
       this.polygons.push(newShape);
+      // REPLACE THIS LINE:
       const shapesToSave = this.polygons.map((s) => {
         const shapeCopy = JSON.parse(JSON.stringify(s));
         return this.convertSquareToPoints(shapeCopy);
       });
-      if (newShape.aisle) {
-        this.aisleStore.push(newShape);
-        const shapeToSaveArray = this.aisleStore.map((ai) => {
-          const aisleShape = JSON.parse(JSON.stringify(ai));
-          return this.convertSquareToPoints(aisleShape);
-        });
-        localStorage.setItem('aisleVisit', JSON.stringify(shapeToSaveArray));
-      } else {
-        localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
-      }
+
+      localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
     } else {
       alert('shape is overlapped existing shape');
     }
@@ -1099,12 +1080,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     for (let shape of this.polygons) {
       if (this.isPointInShape({ x, y }, shape)) {
         this.selectedFence = shape; // <-- Set selected fence here
-        this.redraw();
+        this.redraw(); // Optional: highlight selected fence
         // return;
       }
     }
     if (this.copyMode) {
       if (!this.copiedShapeTemplate) {
+        // Step 1: select a shape to copy
         for (let i = this.polygons.length - 1; i >= 0; i--) {
           if (this.isPointInShape({ x, y }, this.polygons[i])) {
             this.copiedShapeTemplate = JSON.parse(
@@ -1115,11 +1097,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           }
         }
       } else {
+        // Step 2: place copy
         const newShape: Shape = JSON.parse(
           JSON.stringify(this.copiedShapeTemplate)
         );
 
         if (newShape.mode === 'free' && newShape.points) {
+          // Use first point as reference
           const firstPoint = newShape.points[0];
           const dx = x - firstPoint.x;
           const dy = y - firstPoint.y;
@@ -1129,6 +1113,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             y: p.y + dy,
           }));
         } else {
+          // Default (square, circle, etc.)
           const dx = x - newShape.startX!;
           const dy = y - newShape.startY!;
           newShape.startX! += dx;
@@ -1137,6 +1122,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.endY! += dy;
         }
 
+        //  Give unique name
         if (this.copiedShapeTemplate.name) {
           const baseName = this.copiedShapeTemplate.name.replace(/\s+\d+$/, '');
           let counter = 1;
@@ -1150,6 +1136,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           newShape.name = 'Shape 1';
         }
 
+        //  Prevent overlap
         if (this.doesShapeOverlap(newShape)) {
           alert('Cannot place copy: it overlaps with an existing shape.');
           this.copyMode = false;
@@ -1159,7 +1146,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
         //  Save
         this.polygons.push(newShape);
-
         // REPLACE THIS LINE:
         const shapesToSave = this.polygons.map((s) => {
           const shapeCopy = JSON.parse(JSON.stringify(s));
@@ -1228,19 +1214,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
               const shapeCopy = JSON.parse(JSON.stringify(s));
               return this.convertSquareToPoints(shapeCopy);
             });
-            if (newShape.aisle) {
-              this.aisleStore.push(newShape);
-              const shapesToSaveArray = this.aisleStore.map((s) => {
-                const shapeCopy = JSON.parse(JSON.stringify(s));
-                return this.convertSquareToPoints(shapeCopy);
-              });
-              localStorage.setItem(
-                'aisleVisit',
-                JSON.stringify(shapesToSaveArray)
-              );
-            } else {
-              localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
-            }
+
+            localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
             this.redraw();
           }
         } else {
@@ -1502,7 +1477,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawShape(shape, fillColor, strokeColor);
       if (shape.name) this.drawShapeLabel(shape);
     });
-
     if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
       if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
         this.selectedColor = this.mapForm.get('color')?.value;
@@ -2720,7 +2694,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       );
       dataChanged ||= this.handleTimeViolation(r, robotId, insideFence);
       dataChanged ||= this.handleSpeedViolation(r, robotId, insideFence);
+      if (!insideFence || !insideFence.aisle) {
+        this.lastAisleState[robotId] = null;
+      }
 
+      // Only call the aisle handler when inside an aisle
+      if (insideFence && insideFence.aisle) {
+        dataChanged ||= this.handleAisleVisit(
+          insideFence,
+          robotId,
+          r,
+          r.timestamp
+        );
+      }
       this.updateRobotStats(r, ctx, x, y);
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
       this.lastFenceState[robotId] = currentFence;
@@ -2730,6 +2716,48 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
       this.drawCameraFOV(ctx, x, y, -yaw, 120, 100);
     }
+  }
+  private handleAisleVisit(
+    fence: any,
+    robotId: string,
+    robotCoord: any,
+    timestamp: number
+  ): boolean {
+    if (!fence?.aisle) return false;
+
+    const point = { x: robotCoord.x, y: robotCoord.y };
+    const isInside = this.isPointInPolygon(point, fence.points);
+    if (!isInside) return false;
+
+    const aisleName = fence.name || 'Unnamed';
+
+    // 🔹 Prevent duplicate counting
+    if (this.lastAisleState[robotId] === aisleName) return false;
+    this.lastAisleState[robotId] = aisleName;
+
+    // ✅ Get existing data from localStorage
+    const storedData = localStorage.getItem('aisleVisits');
+    let aisleVisits: Record<string, { count: number; timestamps: number[] }> =
+      storedData ? JSON.parse(storedData) : {};
+
+    // ✅ Initialize entry for this aisle if missing
+    if (!aisleVisits[aisleName]) {
+      aisleVisits[aisleName] = { count: 0, timestamps: [] };
+    }
+
+    // ✅ Update count and timestamp
+    aisleVisits[aisleName].count += 1;
+    aisleVisits[aisleName].timestamps.push(timestamp);
+
+    // ✅ Save updated data
+    localStorage.setItem('aisleVisits', JSON.stringify(aisleVisits));
+
+    console.log(
+      `✅ Robot ${robotId} visited aisle: ${aisleName} at ${new Date(
+        timestamp
+      ).toLocaleString()} (Total: ${aisleVisits[aisleName].count})`
+    );
+    return true;
   }
 
   /*  FENCE DETECTION  */
@@ -2745,6 +2773,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           minSpeed: gf.minSpeed,
           maxSpeed: gf.maxSpeed,
           timeLimitMinutes: gf.timeLimitMinutes,
+          aisle: gf.aisle || false,
+          points: gf.points,
         };
       }
     }
