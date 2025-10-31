@@ -219,7 +219,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   } = {};
   private lastSpeedViolationTime: { [key: string]: number } = {}; // Track last violation per robot
 
-  private readonly SPEED_VIOLATION_THROTTLE_MS = 8000;
+  private readonly SPEED_VIOLATION_THROTTLE_MS = 15000;
   private saveCombinedData() {
     localStorage.setItem(
       'robotFenceData',
@@ -354,7 +354,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             const dx = robot.x - ped.x;
             const dy = robot.y - ped.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-
             if (dist < minDistance) {
               minDistance = dist;
               closestPed = ped;
@@ -577,30 +576,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       event.preventDefault();
       this.onWheel(event);
     });
-    // Left click drag
-    // this.clampOffsets();
-    // if (!this.isImageFitted()) {
-    //   // Only allow drag if zoomed in
-    //   this.isPanning = true;
-    //   this.dragStart = {
-    //     x: event.clientX - this.offsetX,
-    //     y: event.clientY - this.offsetY,
-    //   };
-    //   canvas.style.cursor = 'grabbing';
-    // } else {
-    //   // If fitted, disable drag
-    //   this.isPanning = false;
-    //   canvas.style.cursor = 'default';
-    // }
-
-    // Mouse move → pan map if right button held
-    // window.addEventListener('mousemove', (event) => {
-    //   if (this.isPanning && !this.isImageFitted()) {
-    //     this.offsetX = event.clientX - this.dragStart.x;
-    //     this.offsetY = event.clientY - this.dragStart.y;
-    //     this.redraw();
-    //   }
-    // });
 
     canvas.addEventListener('mouseup', (event) => {
       if (event.button === 2 && this.isPanning) {
@@ -608,13 +583,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         canvas.style.cursor = 'default';
       }
     });
-
-    //  window.addEventListener('mouseup', (event) => {
-    //   if (isPanning) {
-    //     canvas.style.cursor = 'default';
-    //   }
-    // });
-    // prevent context menu on right-click
   }
 
   private isImageOutsideCanvas(): boolean {
@@ -624,13 +592,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const width = img.naturalWidth * this.scale;
     const height = img.naturalHeight * this.scale;
 
-    // Image boundaries on canvas
     const left = this.offsetX;
     const right = this.offsetX + width;
     const top = this.offsetY;
     const bottom = this.offsetY + height;
 
-    //  If image is completely outside canvas bounds
     if (right < 0 || left > canvas.width || bottom < 0 || top > canvas.height) {
       return true;
     }
@@ -645,17 +611,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.mapCanvas.nativeElement.style.cursor = 'default';
     }
   }
-  // @HostListener('document:mouseup', ['$event'])
-  // onMouseUp(event: MouseEvent) {
-  //   // Stop resizing or dragging if mouse is released anywhere
-  //   this.draggingShape = null;
-  //   this.resizingShape = null;
-  //   this.activeHandleIndex = null;
-  //   this.originalPoints = [];
-  //   this.isPanning = false;
 
-  //   this.mapCanvas.nativeElement.style.cursor = 'default';
-  // }
   @HostListener('window:mouseup', ['$event'])
   onWindowMouseUp(event: MouseEvent) {
     if (this.isPanning) {
@@ -2669,10 +2625,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const robotId = r.id;
       const timestamp = new Date(r.timestamp).toISOString();
       let dataChanged = false;
-      const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
-      if (speed) {
-        r.speed = speed;
-      }
+      // const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
+      // if (speed) {
+      //   r.speed = speed;
+      // }
 
       const insideFence = this.detectFence(r, geofences);
       const currentFence = insideFence?.name || null;
@@ -2731,32 +2687,22 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     const aisleName = fence.name || 'Unnamed';
 
-    // 🔹 Prevent duplicate counting
     if (this.lastAisleState[robotId] === aisleName) return false;
     this.lastAisleState[robotId] = aisleName;
 
-    // ✅ Get existing data from localStorage
     const storedData = localStorage.getItem('aisleVisits');
     let aisleVisits: Record<string, { count: number; timestamps: number[] }> =
       storedData ? JSON.parse(storedData) : {};
 
-    // ✅ Initialize entry for this aisle if missing
     if (!aisleVisits[aisleName]) {
       aisleVisits[aisleName] = { count: 0, timestamps: [] };
     }
 
-    // ✅ Update count and timestamp
     aisleVisits[aisleName].count += 1;
     aisleVisits[aisleName].timestamps.push(timestamp);
 
-    // ✅ Save updated data
     localStorage.setItem('aisleVisits', JSON.stringify(aisleVisits));
 
-    console.log(
-      `✅ Robot ${robotId} visited aisle: ${aisleName} at ${new Date(
-        timestamp
-      ).toLocaleString()} (Total: ${aisleVisits[aisleName].count})`
-    );
     return true;
   }
 
@@ -2913,10 +2859,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   /*  SPEED VIOLATION  */
   private handleSpeedViolation(r: any, robotId: string, fence: any): boolean {
+    // console.log('Fence', fence);
     if (!fence) return false;
-
     const fenceData = this.ensureFenceData(robotId, fence.name);
     const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
+    console.log('Speed', speed);
     if (speed === null) return false;
 
     r.speed = speed;
@@ -2950,7 +2897,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         message: `⚡ Robot ${r.name || robotId} exceeded max speed limit (${
           fence.maxSpeed
         }) with ${speed.toFixed(2)} units.`,
-        className: 'speed-warning',
+        className: 'error',
         robotId,
       });
 
@@ -2958,6 +2905,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     //  Min speed violation
+    console.log('Min Speed', fence.minSpeed);
+    console.log(' Speed', speed);
     if (fence.minSpeed && speed < fence.minSpeed) {
       fenceData.violations.push({
         type: 'min-speed-violation',
@@ -2974,7 +2923,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         message: `🐢 Robot ${r.name || robotId} is below min speed limit (${
           fence.minSpeed
         }) with ${speed.toFixed(2)} units.`,
-        className: 'speed-warning',
+        className: 'error',
         robotId,
       });
 

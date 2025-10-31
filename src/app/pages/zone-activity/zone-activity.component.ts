@@ -291,15 +291,12 @@ export class ZoneActivityComponent implements OnInit {
     if (!raw) return;
 
     const aisleVisits = JSON.parse(raw);
-    console.log('Selected', selectedDate);
     const start = selectedDate
       ? new Date(selectedDate + 'T00:00:00').getTime()
       : 0;
     const end = selectedDate
       ? new Date(selectedDate + 'T23:59:59').getTime()
       : Infinity;
-    console.log('Start', start);
-    console.log('End', end);
     const labels: string[] = [];
     const counts: number[] = [];
 

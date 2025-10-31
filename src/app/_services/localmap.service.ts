@@ -14,9 +14,12 @@ export class LocalmapService {
   private localisationSubject = new Subject<string>();
   private pedestrianSubject = new Subject<any[]>();
   private markerSubject = new Subject<any[]>();
-
+  private activeVehicles = new Set<string>();
+  private activeVehicleSubject = new Subject<Set<string>>();
   private activeFilters: string[] = [];
   private pendingStartFilters: string[] = [];
+  private robotCounter = 0;
+  private currentRobotId: string = '';
 
   connect() {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -26,15 +29,32 @@ export class LocalmapService {
 
     const ip = localStorage.getItem('_I');
     if (!ip) return;
-
+    console.log('IP', ip);
     const decodedIP = atob(ip);
+
+    console.log('decodeIP', decodedIP);
+
+    // Increment counter and create robot ID
+    this.robotCounter++;
+    this.currentRobotId = `${this.robotCounter}`;
+
     this.socket = new WebSocket(
       `ws://${decodedIP}/v0/slam/ws/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc1ODA5MzQ3OCwiaWF0IjoxNzU3NDg4Njc4fQ.vz9gAAb2NgNLK6vtqE6KQfziYQYv0x-00ZybojV4tTE`
     );
 
     this.socket.onopen = () => {
-      console.log('✅ Socket connected from LocalmapService');
+      console.log(
+        `✅ Socket connected from LocalmapService - ${this.currentRobotId}`
+      );
       this.connected = true;
+
+      // Add robot to active vehicles
+      this.activeVehicles.add(this.currentRobotId);
+      this.activeVehicleSubject.next(new Set(this.activeVehicles));
+      console.log(
+        `🚗 Active vehicles: ${this.activeVehicles.size}`,
+        Array.from(this.activeVehicles)
+      );
 
       // Send pending filters if any
       if (this.pendingStartFilters.length > 0) {
@@ -44,11 +64,21 @@ export class LocalmapService {
     };
 
     this.socket.onmessage = (event) => this.handleMessage(event);
+
     this.socket.onclose = () => {
-      console.log('❌ Socket disconnected');
+      console.log(`❌ Socket disconnected - ${this.currentRobotId}`);
       this.connected = false;
       this.activeFilters = [];
+
+      // Remove robot from active vehicles
+      this.activeVehicles.delete(this.currentRobotId);
+      this.activeVehicleSubject.next(new Set(this.activeVehicles));
+      console.log(
+        `🚗 Active vehicles: ${this.activeVehicles.size}`,
+        Array.from(this.activeVehicles)
+      );
     };
+
     this.socket.onerror = (error) =>
       console.error('⚠️ WebSocket error:', error);
   }
@@ -67,7 +97,7 @@ export class LocalmapService {
       if (data.full_pose?.pose) {
         const pose = data.full_pose.pose;
         this.locationSubject.next({
-          id: 1,
+          id: this.currentRobotId, // Use dynamic robot ID
           x: pose.x,
           y: pose.y,
           z: pose.z,
@@ -144,6 +174,21 @@ export class LocalmapService {
       this.socket.close();
       console.log('🔌 Socket manually disconnected');
     }
+  }
+
+  // Get active vehicle count
+  getActiveVehicleCount(): number {
+    return this.activeVehicles.size;
+  }
+
+  // Get list of active vehicles
+  getActiveVehicles(): string[] {
+    return Array.from(this.activeVehicles);
+  }
+
+  // Observable for active vehicles changes
+  getActiveVehicles$(): Observable<Set<string>> {
+    return this.activeVehicleSubject.asObservable();
   }
 
   // Observables

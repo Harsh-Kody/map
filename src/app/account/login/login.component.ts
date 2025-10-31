@@ -91,7 +91,6 @@ export class LoginComponent {
     if (this.loginForm.valid) {
       this.loginService.loginUser(formdata).subscribe({
         next: (res: any) => {
-          console.log(res);
           localStorage.setItem('userToken', res.access_token);
           this.isLogin = true;
           this.router.navigateByUrl('/dashboard');
@@ -109,6 +108,8 @@ export class LoginComponent {
       const ip = this.IPForm.value.ip;
       this.loginService.verifyDeviceIP(ip).subscribe({
         next: (res) => {
+          console.log('IP form ', ip);
+          console.log('res', res);
           const encodedIP = btoa(ip);
           localStorage.setItem('_I', encodedIP);
           this.resetIPForm();
