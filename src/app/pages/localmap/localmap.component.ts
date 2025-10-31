@@ -165,6 +165,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }[];
     };
   } = {};
+  private drivingData: Record<
+    string,
+    {
+      start: Date | null;
+      hours: Record<string, number>;
+    }
+  > = {};
   private activeViolations: {
     [robotId: string]: {
       [fenceName: string]: {
@@ -381,7 +388,13 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         this.redraw();
       })
     );
-
+    this.subs.push(
+      this.localMapService.getDrivingStatus$().subscribe((status) => {
+        if (status && status.id && status.timestamp) {
+          this.handleDrivingStatus(status.id, status.driving, status.timestamp);
+        }
+      })
+    );
     // MetaData
     this.subs.push(
       this.localMapService.getMetaData().subscribe((meta) => {
@@ -2856,6 +2869,55 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     return false;
   }
+  private handleDrivingStatus(
+    robotId: string,
+    isDriving: boolean,
+    timestamp: string
+  ): void {
+    const t = new Date(timestamp);
+
+    // ✅ Local hour key (not UTC)
+    const hourKey = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}-${String(t.getDate()).padStart(2, '0')}T${String(t.getHours()).padStart(
+      2,
+      '0'
+    )}`;
+
+    if (!this.drivingData[robotId]) {
+      this.drivingData[robotId] = { start: null, hours: {} };
+    }
+
+    const data = this.drivingData[robotId];
+
+    if (isDriving) {
+      if (!data.start) {
+        data.start = t;
+      }
+    } else {
+      if (data.start) {
+        const duration = (t.getTime() - data.start.getTime()) / 60000; // minutes
+        data.hours[hourKey] = (data.hours[hourKey] || 0) + duration;
+
+        console.log(
+          `⏱️ Robot ${robotId} drove ${duration.toFixed(
+            2
+          )} minutes during ${hourKey}`
+        );
+
+        data.start = null;
+
+        // Save only hours
+        const persistedData: Record<string, { hours: Record<string, number> }> =
+          {};
+        for (const id in this.drivingData) {
+          persistedData[id] = { hours: this.drivingData[id].hours };
+        }
+        localStorage.setItem('drivingData', JSON.stringify(persistedData));
+      }
+    }
+  }
 
   /*  SPEED VIOLATION  */
   private handleSpeedViolation(r: any, robotId: string, fence: any): boolean {
@@ -2905,8 +2967,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     //  Min speed violation
-    console.log('Min Speed', fence.minSpeed);
-    console.log(' Speed', speed);
     if (fence.minSpeed && speed < fence.minSpeed) {
       fenceData.violations.push({
         type: 'min-speed-violation',

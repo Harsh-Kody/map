@@ -16,6 +16,7 @@ export class LocalmapService {
   private markerSubject = new Subject<any[]>();
   private activeVehicles = new Set<string>();
   private activeVehicleSubject = new Subject<Set<string>>();
+  private drivingStatus = new Subject<any>();
   private activeFilters: string[] = [];
   private pendingStartFilters: string[] = [];
   private robotCounter = 0;
@@ -29,10 +30,7 @@ export class LocalmapService {
 
     const ip = localStorage.getItem('_I');
     if (!ip) return;
-    console.log('IP', ip);
     const decodedIP = atob(ip);
-
-    console.log('decodeIP', decodedIP);
 
     // Increment counter and create robot ID
     this.robotCounter++;
@@ -51,10 +49,6 @@ export class LocalmapService {
       // Add robot to active vehicles
       this.activeVehicles.add(this.currentRobotId);
       this.activeVehicleSubject.next(new Set(this.activeVehicles));
-      console.log(
-        `🚗 Active vehicles: ${this.activeVehicles.size}`,
-        Array.from(this.activeVehicles)
-      );
 
       // Send pending filters if any
       if (this.pendingStartFilters.length > 0) {
@@ -106,6 +100,14 @@ export class LocalmapService {
           qz: pose.qz,
           qw: pose.qw,
           timestamp: pose.timestamp,
+        });
+      }
+      if (typeof data.full_pose?.driving === 'boolean') {
+        this.drivingStatus.next({
+          id: this.currentRobotId,
+          driving: data.full_pose.driving,
+          timestamp:
+            data.full_pose?.pose?.timestamp || new Date().toISOString(),
         });
       }
       if (data.meta_data?.DistanceTravelled !== undefined) {
@@ -203,6 +205,9 @@ export class LocalmapService {
   }
   getPedestrians(): Observable<any[]> {
     return this.pedestrianSubject.asObservable();
+  }
+  getDrivingStatus$(): Observable<any> {
+    return this.drivingStatus.asObservable();
   }
   getMarkers(): Observable<any[]> {
     return this.markerSubject.asObservable();

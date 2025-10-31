@@ -13,13 +13,16 @@ export class ZoneActivityComponent implements OnInit {
   chartBar: any;
   chartLine: any;
   chartAisle: any;
+  chartHourlyActivity: any;
   filterForm!: FormGroup;
 
   constructor(private fb: FormBuilder) {}
 
   ngOnInit() {
+    const today = new Date();
+    const formattedToday = today.toISOString().split('T')[0];
     this.filterForm = this.fb.group({
-      date: ['', Validators.required],
+      date: [formattedToday, Validators.required],
     });
   }
 
@@ -36,11 +39,12 @@ export class ZoneActivityComponent implements OnInit {
     const { date } = this.filterForm.value;
     const data = this.getFilteredData(date);
     const hourlyData = this.getHourlyData(date);
-
+    const hourlyActivity = this.getHourlyActivityData(date);
     this.loadPieChart(data);
     this.loadBarChart(data);
     this.loadLineChart(hourlyData);
     this.loadAisleVisitChart(date);
+    this.loadHourlyActivityChart(hourlyActivity);
   }
 
   private getFilteredData(selectedDate: string) {
@@ -140,6 +144,46 @@ export class ZoneActivityComponent implements OnInit {
 
     return { labels, distance, stops };
   }
+  private getHourlyActivityData(selectedDate: string) {
+    const raw = localStorage.getItem('drivingData');
+    if (!raw) return { labels: [], utilization: [], activeVehicles: [] };
+
+    const parsed = JSON.parse(raw);
+    const hourlyTotals: Record<string, number[]> = {};
+
+    for (const [robotId, robotData] of Object.entries<any>(parsed)) {
+      if (!robotData?.hours) continue;
+
+      for (const [hourKey, minutes] of Object.entries<number>(
+        robotData.hours
+      )) {
+        // ✅ Only count data for the selected date
+        if (hourKey.startsWith(selectedDate)) {
+          if (!hourlyTotals[hourKey]) hourlyTotals[hourKey] = [];
+          hourlyTotals[hourKey].push(minutes);
+        }
+      }
+    }
+
+    const sortedHours = Object.keys(hourlyTotals).sort();
+    const labels: string[] = [];
+    const utilization: number[] = [];
+    const activeVehicles: number[] = [];
+
+    for (const hourKey of sortedHours) {
+      const minutesArray = hourlyTotals[hourKey];
+      const activeCount = minutesArray.filter((m) => m > 0).length; // ✅ active robots this hour
+      const avgMinutes =
+        minutesArray.reduce((a, b) => a + b, 0) / minutesArray.length;
+      const percentage = Math.min((avgMinutes / 60) * 100, 100);
+
+      labels.push(hourKey.slice(11, 13) + ':00');
+      utilization.push(Number(percentage.toFixed(2)));
+      activeVehicles.push(activeCount);
+    }
+
+    return { labels, utilization, activeVehicles };
+  }
 
   private loadPieChart(data: { labels: string[]; dwell: number[] }) {
     if (this.chartPie) this.chartPie.destroy();
@@ -170,6 +214,83 @@ export class ZoneActivityComponent implements OnInit {
         plugins: {
           legend: { position: 'right' },
           title: { display: true, text: 'Time Spent by Location (Pie Chart)' },
+        },
+      },
+    });
+  }
+  private loadHourlyActivityChart(data: {
+    labels: string[];
+    utilization: number[];
+    activeVehicles: number[];
+  }) {
+    if (this.chartHourlyActivity) this.chartHourlyActivity.destroy();
+    const ctx = document.getElementById(
+      'hourlyActivityChart'
+    ) as HTMLCanvasElement;
+    if (!ctx) return;
+
+    this.chartHourlyActivity = new Chart(ctx, {
+      type: 'line', // 🔹 switched to line chart
+      data: {
+        labels: data.labels,
+        datasets: [
+          {
+            label: 'Active Vehicles',
+            data: data.activeVehicles,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59,130,246,0.1)',
+            yAxisID: 'y',
+            tension: 0.4, // 🔹 smooth curve
+            fill: false,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+          },
+          {
+            label: 'Utilization (%)',
+            data: data.utilization,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16,185,129,0.1)',
+            yAxisID: 'y1',
+            tension: 0.4,
+            fill: false,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'top' },
+          title: {
+            display: true,
+            text: 'Hourly Activity (Active Vehicles & Utilization)',
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                if (context.dataset.label === 'Utilization (%)')
+                  return `Utilization: ${context.formattedValue}%`;
+                return `Active Vehicles: ${context.formattedValue}`;
+              },
+            },
+          },
+        },
+        scales: {
+          y1: {
+            beginAtZero: true,
+            max: 100,
+            position: 'right',
+            title: { display: true, text: 'Utilization (%)' },
+          },
+          y: {
+            beginAtZero: true,
+            position: 'left',
+            title: { display: true, text: 'Active Vehicles (count)' },
+            grid: { drawOnChartArea: false },
+          },
         },
       },
     });
