@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Chart } from 'chart.js';
 import { LoginComponent } from '../../account/login/login.component';
+import { IndexedDBService } from '../../_services/indexeddb.service';
 
 @Component({
   selector: 'app-zone-activity',
@@ -16,7 +17,7 @@ export class ZoneActivityComponent implements OnInit {
   chartHourlyActivity: any;
   filterForm!: FormGroup;
   storeArray: any;
-  constructor(private fb: FormBuilder) {}
+  constructor(private fb: FormBuilder, private idb: IndexedDBService) {}
 
   ngOnInit() {
     const today = new Date();
@@ -36,15 +37,15 @@ export class ZoneActivityComponent implements OnInit {
     return this.filterForm.get(controlName)?.hasError(errorName);
   }
 
-  applyFilter() {
+  async applyFilter() {
     if (this.filterForm.invalid) {
       this.filterForm.markAllAsTouched();
       return;
     }
     const { date } = this.filterForm.value;
-    const data = this.getFilteredData(date);
-    const hourlyData = this.getHourlyData(date);
-    const hourlyActivity = this.getHourlyActivityData(date);
+    const data = await this.getFilteredData(date);
+    const hourlyData = await this.getHourlyData(date);
+    const hourlyActivity = await this.getHourlyActivityData(date);
     this.loadPieChart(data);
     this.loadBarChart(data);
     this.loadLineChart(hourlyData);
@@ -52,11 +53,11 @@ export class ZoneActivityComponent implements OnInit {
     this.loadHourlyActivityChart(hourlyActivity);
   }
 
-  private getFilteredData(selectedDate: string) {
-    const raw = localStorage.getItem('robotFenceData');
+  private async getFilteredData(selectedDate: string) {
+    const raw = await this.idb.get('robotFenceData', 'combined');
     if (!raw) return { labels: [], dwell: [], violations: [] };
 
-    const parsed = JSON.parse(raw);
+    const parsed = raw.data || raw; // ✅ FIXED — use object directly
     const labels: string[] = [];
     const dwell: number[] = [];
     const violations: number[] = [];
@@ -103,44 +104,27 @@ export class ZoneActivityComponent implements OnInit {
     return { labels, dwell, violations };
   }
 
-  private getHourlyData(selectedDate: string) {
-    const raw = localStorage.getItem('robot_1_stats');
-    if (!raw) return { labels: [], distance: [], stops: [] };
-
-    let parsed: any[] = [];
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      console.warn('⚠️ Failed to parse robot_1_stats');
+  private async getHourlyData(selectedDate: string) {
+    const record = await this.idb.get('robotStats', 'robot_1_stats'); // matches save format
+    if (!record || !record.stats)
       return { labels: [], distance: [], stops: [] };
-    }
 
-    // Ensure proper numeric types
-    parsed = parsed.map((d) => ({
-      timestamp:
-        typeof d.timestamp === 'number' ? d.timestamp : Number(d.timestamp),
-      distance: Number(d.distance) || 0,
-      stops: Number(d.stops) || 0,
-      hour: d.hour || new Date(Number(d.timestamp)).toLocaleTimeString(),
-    }));
-
-    // Filter by selected date
+    const parsed = record.stats;
     const start = new Date(selectedDate + 'T00:00:00').getTime();
     const end = new Date(selectedDate + 'T23:59:59').getTime();
 
     const filtered = parsed.filter(
-      (d) => d.timestamp >= start && d.timestamp <= end
+      (d: any) => d.timestamp >= start && d.timestamp <= end
     );
 
-    // Group by hour (take last data point of each hour)
+    // Group by hour
     const hourly: Record<
       number,
       { ts: number; distance: number; stops: number }
     > = {};
 
     for (const d of filtered) {
-      const date = new Date(d.timestamp);
-      const hour = date.getHours(); // 0..23
+      const hour = new Date(d.timestamp).getHours();
       if (!hourly[hour] || d.timestamp > hourly[hour].ts) {
         hourly[hour] = {
           ts: d.timestamp,
@@ -155,26 +139,22 @@ export class ZoneActivityComponent implements OnInit {
       .sort((a, b) => a - b);
 
     const labels = sortedHours.map((h) => `${h}:00`);
-    const distance = sortedHours.map((h) => Number(hourly[h].distance) || 0);
-    const stops = sortedHours.map((h) => Number(hourly[h].stops) || 0);
+    const distance = sortedHours.map((h) => hourly[h].distance);
+    const stops = sortedHours.map((h) => hourly[h].stops);
 
     return { labels, distance, stops };
   }
 
-  private getHourlyActivityData(selectedDate: string) {
-    const raw = localStorage.getItem('drivingData');
-    if (!raw) return { labels: [], utilization: [], activeVehicles: [] };
+  private async getHourlyActivityData(selectedDate: string) {
+    const allDrivingData = await this.idb.getAll('drivingData'); // all robots
+    if (!allDrivingData || allDrivingData.length === 0)
+      return { labels: [], utilization: [], activeVehicles: [] };
 
-    const parsed = JSON.parse(raw);
     const hourlyTotals: Record<string, number[]> = {};
 
-    for (const [robotId, robotData] of Object.entries<any>(parsed)) {
-      if (!robotData?.hours) continue;
-
-      for (const [hourKey, minutes] of Object.entries<number>(
-        robotData.hours
-      )) {
-        // ✅ Only count data for the selected date
+    for (const robot of allDrivingData) {
+      const hours = robot.hours || {};
+      for (const [hourKey, minutes] of Object.entries<number>(hours)) {
         if (hourKey.startsWith(selectedDate)) {
           if (!hourlyTotals[hourKey]) hourlyTotals[hourKey] = [];
           hourlyTotals[hourKey].push(minutes);
@@ -189,7 +169,7 @@ export class ZoneActivityComponent implements OnInit {
 
     for (const hourKey of sortedHours) {
       const minutesArray = hourlyTotals[hourKey];
-      const activeCount = minutesArray.filter((m) => m > 0).length; // ✅ active robots this hour
+      const activeCount = minutesArray.filter((m) => m > 0).length;
       const avgMinutes =
         minutesArray.reduce((a, b) => a + b, 0) / minutesArray.length;
       const percentage = Math.min((avgMinutes / 60) * 100, 100);
@@ -431,29 +411,28 @@ export class ZoneActivityComponent implements OnInit {
     });
   }
 
-  private loadAisleVisitChart(selectedDate?: string) {
-    const raw = localStorage.getItem('aisleVisits');
-    if (!raw) return;
+  private async loadAisleVisitChart(selectedDate?: string) {
+    const allAisles = await this.idb.getAll('aisleVisits');
+    if (!allAisles || allAisles.length === 0) return;
 
-    const aisleVisits = JSON.parse(raw);
     const start = selectedDate
       ? new Date(selectedDate + 'T00:00:00').getTime()
       : 0;
     const end = selectedDate
       ? new Date(selectedDate + 'T23:59:59').getTime()
       : Infinity;
+
     const labels: string[] = [];
     const counts: number[] = [];
 
-    for (const [aisle, data] of Object.entries<any>(aisleVisits)) {
-      if (!data.timestamps) continue;
-      const countForDate = data.timestamps.filter((t: string) => {
+    for (const aisle of allAisles) {
+      const countForDate = aisle.timestamps?.filter((t: number) => {
         const ts = new Date(t).getTime();
         return ts >= start && ts <= end;
       }).length;
 
-      if (countForDate > 0) {
-        labels.push(aisle);
+      if (countForDate && countForDate > 0) {
+        labels.push(aisle.name);
         counts.push(countForDate);
       }
     }

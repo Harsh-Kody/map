@@ -1,19 +1,46 @@
 <div class="map-container">
-  <!-- <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas> -->
+  <div class="zoom-controls-above">
+    <button (click)="zoomIn()">+</button>
+    <button (click)="zoomOut()">−</button>
+    <button (click)="resetView()">⟳</button>
+  </div>
   <div class="canvas-layout">
-
-
+    <!-- 🟦 Zoom buttons appear above the image -->
     <div class="controls">
-      @if (!isDrawingShape) {
+      @if (!isDrawingShape && showFences) {
       <button (click)="startAddGeofence()">Add Geofence</button>
       }
-      <button (click)="zoomIn()">Zoom In (+)</button>
-      <button (click)="zoomOut()">Zoom In (-)</button>
-      <button (click)="resetView()">Reset</button>
+      @if (storeGeofences ) {
+      <button (click)="toggleFences()">
+        {{ showFences ? 'Hide Fences' : 'Show Fences' }}
+      </button>
+      @if (showFences) {
       <button (click)="clearGeofences()">Clear all Geofences</button>
       <button (click)="toggleDeleteMode()">
         {{ deleteMode ? "Cancel Delete" : "Select to delete Fence" }}
       </button>
+      <button (click)="copyGeofence()">Copy geofence</button>
+      }
+
+      }
+      @if (shapeMode === 'free' && isDrawingShape) {
+      <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">
+        Undo
+      </button>
+      <button (click)="finalizeShape()">Finalize Free Shape</button>
+      }
+      <!-- <div *ngIf="shapeMode === 'free' && isDrawingShape">
+        <div>
+          <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">
+            Undo
+          </button>
+        </div>
+        <div>
+          <button (click)="finalizeShape()">Finalize Free Shape</button>
+        </div>
+      </div> -->
+      @if (localisationStatus === 'Localized' ) {
+
       <button (click)="togglePath()">
         {{ showPath ? "Hide path" : "Show path" }}
       </button>
@@ -26,29 +53,31 @@
       <button (click)="toggleAuras()">
         {{ toggleAura ? "Hide Aura" : "Show Aura" }}
       </button>
-      <div *ngIf="shapeMode === 'free' && isDrawingShape">
-        <button (click)="undoLastFreePoint()" [disabled]="currentPolygon.length <= 1">
-          Undo
-        </button>
-        <button (click)="finalizeShape()">Finalize Free Shape</button>
-      </div>
-      <!-- <div *ngIf="hoveredShape"> -->
-      <button (click)="copyGeofence()">Copy geofence </button>
-
       <button (click)="toggleGrid()">
         {{ gridEnabled ? "Hide Grid" : "Show Grid" }}
       </button>
+      }
 
       <button routerLink="/robot-intensity">Robot-Vibration</button>
       <button routerLink="/robot-speed">Robot-Speed</button>
     </div>
 
+    <!-- 🖼️ Image and Canvas -->
     <div class="canvas-wrapper">
       <img #mapImage id="map-image" [src]="mapImageSrc" hidden />
       <canvas #mapCanvas id="map-canvas" (click)="onCanvasClick($event)"></canvas>
     </div>
+    <div class="controls right-controls">
+      <div class="hamburger" [class.active]="showRobotInfo" (click)="toggleRobotInfo()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
   </div>
 </div>
+
+
 
 <div class="fence-log">
   <!-- <h3>Fence Entry Log</h3> -->
@@ -87,7 +116,7 @@
   </ng-container>
 </div>
 
-<div class="robot-info">
+<div class="robot-info" *ngIf="showRobotInfo">
   <b>Mouse position</b>
   <h6 *ngIf="coord"> X -> {{coord.x | number : '1.2-2'}} <br /> Y -> {{coord.y | number: '1.2-2'}} </h6>
   <h5><b>Robot Coords</b></h5>

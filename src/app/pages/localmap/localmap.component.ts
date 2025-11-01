@@ -25,6 +25,7 @@ import { RobotLocation } from '../../model/RobotLocation';
 import { Shape } from '../../model/shape';
 import { Subscription } from 'rxjs';
 import { ToastNotificationService } from '../../shared/toast-notification/toast-notification.service';
+import { IndexedDBService } from '../../_services/indexeddb.service';
 @Component({
   selector: 'app-localmap',
   templateUrl: './localmap.component.html',
@@ -48,7 +49,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private nameChange: boolean = false;
   private isPanning = false;
   private isRestricated = false;
-
+  storeGeofences: any;
   private originalPoints: { x: number; y: number }[] = [];
   isDrawingShape = false;
   private fittedScale = 1;
@@ -86,8 +87,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private readonly MAP_W = 31.9;
   private readonly MAP_H = 33.2;
   private readonly WORLD_SCALE = 30.929;
-  private ignoreNextClickAfterEdit = false;
   coord: any;
+  private ignoreNextClickAfterEdit = false;
+
+  showFences: boolean = true;
   robots: RobotLocation[] = [];
   gridEnabled = false;
   gridSize = 5;
@@ -131,10 +134,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   public closestPedestrian: any = null;
   togglePadestrian: boolean = false;
   toggleAura: boolean = false;
+  toggleFence: boolean = true;
   private shapeToCopy: Shape | null = null;
   addingGeofence: boolean = false;
   selectedColor: string = '#ff0000'; // default
   closestPedestrians: any;
+  showRobotInfo = false;
   lastX = 0;
   lastY = 0;
   lastZ = 0;
@@ -227,11 +232,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private lastSpeedViolationTime: { [key: string]: number } = {}; // Track last violation per robot
 
   private readonly SPEED_VIOLATION_THROTTLE_MS = 15000;
-  private saveCombinedData() {
-    localStorage.setItem(
-      'robotFenceData',
-      JSON.stringify(this.combinedTracking)
-    );
+  async saveCombinedData() {
+    await this.dbService.set('robotFenceData', {
+      id: 'combined',
+      data: this.combinedTracking,
+    });
   }
   private lastAisleState: Record<string, string | null> = {};
 
@@ -248,25 +253,27 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.combinedTracking = {};
     }
   }
-  private saveRobotData(
+  private async saveRobotData(
     robotId: string,
     timestamp: number,
     distance: number,
     stops: number
   ) {
     const key = `robot_${robotId}_stats`;
-    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    const existing = (await this.dbService.get('robotStats', key)) || {
+      robotId: key,
+      stats: [],
+    };
 
-    stored.push({
+    existing.stats.push({
       timestamp,
       distance,
       stops,
       hour: new Date(timestamp).toLocaleTimeString(),
     });
 
-    localStorage.setItem(key, JSON.stringify(stored));
+    await this.dbService.set('robotStats', existing);
   }
-
   minMaxSpeedValidator(): ValidatorFn {
     return (controls: AbstractControl): ValidationErrors | null => {
       const minSpeed = controls.get('minSpeed')?.value;
@@ -286,7 +293,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     private formBuilder: FormBuilder,
     private router: Router,
     private changeDetector: ChangeDetectorRef,
-    private toastService: ToastNotificationService
+    private toastService: ToastNotificationService,
+    private dbService: IndexedDBService
   ) {}
   selectShape(mode: 'free' | 'square') {
     this.shapeMode = mode;
@@ -336,7 +344,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.chartData.datasets[0].data =
             this.chartData.datasets[0].data.slice(-200);
         }
-        console.log('ROBOT X', robot.x, 'ROBOT Y', robot.y);
         // scale robot coords
         const scaled = this.scaleCoords(robot.x, robot.y);
         robot.x = scaled.x;
@@ -507,7 +514,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       fenceName: null,
       shapeMode: 'square',
       // circleRadius: 3,
-      squareSize: 150,
+      squareSize: 300,
       // triangleBase: 2,
       // triangleHeight: 1,
       color: '#0000ff',
@@ -1388,6 +1395,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.gridEnabled = !this.gridEnabled;
     this.redraw();
   }
+  toggleFences() {
+    this.showFences = !this.showFences;
+    this.redraw();
+  }
+
   chartData: ChartConfiguration<'line'>['data'] = {
     datasets: [
       {
@@ -1438,14 +1450,16 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     ctx.drawImage(img, this.offsetX, this.offsetY, cssW, cssH);
     this.drawRobotPath();
     // console.log('POl', this.polygons);
-    this.polygons.forEach((shape) => {
-      const strokeColor = shape.color;
-      const fillColor = shape.color
-        ? this.hexToRgba(shape.color, 0.3)
-        : 'rgba(255,0,0,0.3)';
-      this.drawShape(shape, fillColor, strokeColor);
-      if (shape.name) this.drawShapeLabel(shape);
-    });
+    if (this.showFences) {
+      this.polygons.forEach((shape) => {
+        const strokeColor = shape.color;
+        const fillColor = shape.color
+          ? this.hexToRgba(shape.color, 0.1)
+          : 'rgba(255,0,0,0.3)';
+        this.drawShape(shape, fillColor, strokeColor);
+        if (shape.name) this.drawShapeLabel(shape);
+      });
+    }
     if (this.isDrawingShape && !this.draggingShape && !this.resizingShape) {
       if (this.shapeMode === 'free' && this.currentPolygon.length > 0) {
         this.selectedColor = this.mapForm.get('color')?.value;
@@ -1633,6 +1647,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         if (this.isPointInShape({ x, y }, this.polygons[i])) {
           if (confirm(`Delete fence "${this.polygons[i].name}"?`)) {
             this.polygons.splice(i, 1);
+            if (this.polygons.length === 0) {
+              this.clearGeofences();
+              this.deleteMode = false;
+              this.mapCanvas.nativeElement.style.cursor = 'default';
+              return;
+            }
             const shapesToSave = this.polygons.map((s) => {
               const shapeCopy = JSON.parse(JSON.stringify(s));
               return this.convertSquareToPoints(shapeCopy);
@@ -1940,8 +1960,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private getStoredGeofences(): any[] {
-    const stored = localStorage.getItem('geoFences');
-    return stored ? JSON.parse(stored) : [];
+    this.storeGeofences = localStorage.getItem('geoFences');
+    return this.storeGeofences ? JSON.parse(this.storeGeofences) : [];
   }
 
   private isPointInPolygon(
@@ -2346,7 +2366,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     this.ctx.fillStyle = 'black';
-    this.ctx.font = `bold 14px Arial`;
+    this.ctx.font = ` 10px Arial`;
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
     this.ctx.fillText(shape.name!, x, y);
@@ -2462,6 +2482,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       roll: roll * (180 / Math.PI),
     };
   }
+  toggleRobotInfo() {
+    this.showRobotInfo = !this.showRobotInfo;
+  }
   private quaternionIntensity(qx: number, qy: number, qz: number, qw: number) {
     const dq = {
       qw: Math.abs(qw - this.lastQ.qw),
@@ -2487,7 +2510,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   ) {
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-    const visibleRange = range * this.scale * 2;
+    // console.log('scale', this.scale);
+    const visibleRange = range * this.scale * 20;
 
     // ---- FOV cone (as-is) ----
     if (this.toggleAura) {
@@ -2626,7 +2650,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.lastRobotPositions[robotId] = { x, y, timestamp: currentTime };
     return null;
   }
-  private drawRobots() {
+  private async drawRobots() {
     if (!this.robots || this.robots.length === 0) return;
 
     const ctx = this.ctx!;
@@ -2669,7 +2693,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       // Only call the aisle handler when inside an aisle
       if (insideFence && insideFence.aisle) {
-        dataChanged ||= this.handleAisleVisit(
+        dataChanged ||= await this.handleAisleVisit(
           insideFence,
           robotId,
           r,
@@ -2693,35 +2717,46 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawCameraFOV(ctx, x, y, -yaw, 120, 100);
     }
   }
-  private handleAisleVisit(
+  private async handleAisleVisit(
     fence: any,
     robotId: string,
     robotCoord: any,
     timestamp: number
-  ): boolean {
+  ): Promise<boolean> {
     if (!fence?.aisle) return false;
 
     const point = { x: robotCoord.x, y: robotCoord.y };
     const isInside = this.isPointInPolygon(point, fence.points);
-    if (!isInside) return false;
-
     const aisleName = fence.name || 'Unnamed';
 
-    if (this.lastAisleState[robotId] === aisleName) return false;
-    this.lastAisleState[robotId] = aisleName;
-
-    const storedData = localStorage.getItem('aisleVisits');
-    let aisleVisits: Record<string, { count: number; timestamps: number[] }> =
-      storedData ? JSON.parse(storedData) : {};
-
-    if (!aisleVisits[aisleName]) {
-      aisleVisits[aisleName] = { count: 0, timestamps: [] };
+    // 🔹 If robot is outside this aisle, reset its state
+    if (!isInside) {
+      if (this.lastAisleState[robotId] === aisleName) {
+        this.lastAisleState[robotId] = null;
+      }
+      return false;
     }
 
-    aisleVisits[aisleName].count += 1;
-    aisleVisits[aisleName].timestamps.push(timestamp);
+    // 🔹 If robot is already recorded as inside the same aisle, do not increment
+    if (this.lastAisleState[robotId] === aisleName) {
+      return false;
+    }
 
-    localStorage.setItem('aisleVisits', JSON.stringify(aisleVisits));
+    // 🔹 Robot just entered a new aisle
+    this.lastAisleState[robotId] = aisleName;
+
+    const record = (await this.dbService.get('aisleVisits', aisleName)) || {
+      name: aisleName,
+      count: 0,
+      timestamps: [],
+    };
+
+    record.count += 1;
+    record.timestamps.push(timestamp);
+
+    await this.dbService.set('aisleVisits', record);
+
+    console.log(`🚶 Robot ${robotId} entered aisle: ${aisleName}`);
 
     return true;
   }
@@ -2876,14 +2911,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     return false;
   }
-  private handleDrivingStatus(
+  async handleDrivingStatus(
     robotId: string,
     isDriving: boolean,
     timestamp: string
-  ): void {
+  ) {
     const t = new Date(timestamp);
-
-    // ✅ Local hour key (not UTC)
     const hourKey = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(
       2,
       '0'
@@ -2899,29 +2932,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const data = this.drivingData[robotId];
 
     if (isDriving) {
-      if (!data.start) {
-        data.start = t;
-      }
+      if (!data.start) data.start = t;
     } else {
       if (data.start) {
-        const duration = (t.getTime() - data.start.getTime()) / 60000; // minutes
+        const duration = (t.getTime() - data.start.getTime()) / 60000;
         data.hours[hourKey] = (data.hours[hourKey] || 0) + duration;
-
-        console.log(
-          `⏱️ Robot ${robotId} drove ${duration.toFixed(
-            2
-          )} minutes during ${hourKey}`
-        );
-
         data.start = null;
 
-        // Save only hours
-        const persistedData: Record<string, { hours: Record<string, number> }> =
-          {};
-        for (const id in this.drivingData) {
-          persistedData[id] = { hours: this.drivingData[id].hours };
-        }
-        localStorage.setItem('drivingData', JSON.stringify(persistedData));
+        await this.dbService.set('drivingData', { robotId, hours: data.hours });
       }
     }
   }

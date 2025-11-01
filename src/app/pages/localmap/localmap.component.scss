@@ -3,7 +3,7 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: stretch; 
 }
 
 /* Layout for controls and canvas side-by-side */
@@ -14,7 +14,7 @@
   align-items: center;
   gap: 30px; /* adjust spacing between controls and canvas */
   flex: 1;
-  padding: 20px;
+  // padding: 20px;
 }
 
 .controls {
@@ -65,11 +65,11 @@
 /* Robot info on right */
 .robot-info {
   position: absolute;
-  top: 80px; /* below top buttons */
+  top: 120px; /* below top buttons */
   right: 10px;
   width: 220px;
   max-height: 80%;
-  overflow-y: auto;
+  // overflow-y: auto;
   background: #f9f9f9;
   padding: 10px;
   border-left: 2px solid #ccc;
@@ -110,4 +110,95 @@
   position: absolute;
   top: 2px;
   left: 8px;
+}
+
+.canvas-wrapper {
+  position: relative;
+}
+
+.zoom-controls-above {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  // margin-bottom: 8px;
+  // padding: 6px 12px;
+  // background: rgba(245, 245, 245, 0.9);
+  border-radius: 10px;
+  width: fit-content;
+  margin-left: 60%;
+  margin-right: auto;
+  // box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.zoom-controls-above button {
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.zoom-controls-above button:hover {
+  background-color: #0056b3;
+}
+
+/* Right Side Toggle Button (Sidebar Style) */
+/* === Sidebar Toggle (Hamburger) === */
+.right-controls {
+  position: fixed;
+  top: 130px;
+  right: 50px; /* Adjust to match the right edge of your robot-info panel */
+  z-index: 20;
+}
+
+.hamburger {
+  width: 32px;
+  height: 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px 0 0 6px;
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+/* Each line */
+.hamburger span {
+  display: block;
+  height: 3px;
+  width: 100%;
+  background: white;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+/* Hover and active animations */
+.hamburger:hover {
+  background: linear-gradient(135deg, #27ae60, #1e8449);
+  transform: translateX(-3px);
+}
+
+/* Active (when sidebar is open) */
+.hamburger.active {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+}
+
+/* Transform lines into an X when active */
+.hamburger.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+
+.hamburger.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(6px, -6px);
 }
