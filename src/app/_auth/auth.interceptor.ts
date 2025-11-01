@@ -56,7 +56,7 @@ export class AuthInterceptor implements HttpInterceptor {
       );
     } else {
       if (req.url.includes('/hrms')) {
-        localStorage.clear();
+        // localStorage.clear();
         // this.modalService.dismissAll();
         this.router.navigateByUrl('/');
       }

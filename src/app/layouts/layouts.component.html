@@ -1,23 +1,13 @@
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm px-4">
   <div class="container-fluid">
     <!-- Brand / Title -->
-    <a
-      class="navbar-brand fw-semibold text-primary mb-0 h4"
-      routerLink="/dashboard"
-    >
+    <a class="navbar-brand fw-semibold text-primary mb-0 h4" routerLink="/dashboard">
       Auto FC
     </a>
 
     <!-- Mobile Toggle -->
-    <button
-      class="navbar-toggler"
-      type="button"
-      data-bs-toggle="collapse"
-      data-bs-target="#navbarNav"
-      aria-controls="navbarNav"
-      aria-expanded="false"
-      aria-label="Toggle navigation"
-    >
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+      aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
 
@@ -26,18 +16,19 @@
       <!-- Left Navigation -->
       <ul class="navbar-nav me-auto mt-2 mt-lg-0">
         <li class="nav-item">
-          <a
-            class="nav-link"
-            routerLink="/dashboard"
-            routerLinkActive="active"
-            [routerLinkActiveOptions]="{ exact: true }"
-          >
+          <a class="nav-link" routerLink="/dashboard" routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: true }">
             Dashboard
           </a>
         </li>
         <li class="nav-item">
           <a class="nav-link" routerLink="/details" routerLinkActive="active">
             Check Details
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="zone-activity" routerLinkActive="active">
+            Zone-Activity
           </a>
         </li>
         <!-- <li class="nav-item">
@@ -53,20 +44,13 @@
         <div class="d-flex align-items-center">
           <span class="text-muted small me-2">Server IP:</span>
           <span class="fw-semibold text-primary me-2">{{ serverIp }}</span>
-          <button
-            class="btn btn-sm btn-outline-secondary py-0 px-2"
-            (click)="openModal(AddIPModal)"
-          >
+          <button class="btn btn-sm btn-outline-secondary py-0 px-2" (click)="openModal(AddIPModal)">
             <i class="bi bi-pencil-square"></i>
           </button>
         </div>
 
         <!-- Logout Button -->
-        <button
-          class="btn btn-outline-danger btn-sm"
-          (click)="logOut()"
-          type="button"
-        >
+        <button class="btn btn-outline-danger btn-sm" (click)="logOut()" type="button">
           <i class="bi bi-box-arrow-right me-1"></i> Logout
         </button>
       </div>
@@ -82,37 +66,19 @@
 <ng-template #AddIPModal let-modal>
   <div class="modal-header">
     <h5 class="modal-title">Change Server IP</h5>
-    <button
-      type="button"
-      class="btn-close"
-      data-bs-dismiss="modal"
-      aria-label="Close"
-      (click)="modal.close('Close click')"
-      (click)="onCancel()"
-    ></button>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+      (click)="modal.close('Close click')" (click)="onCancel()"></button>
   </div>
-  <form
-    [formGroup]="IPForm"
-    #ipFormDirective="ngForm"
-    (ngSubmit)="IPFormSubmit()"
-  >
+  <form [formGroup]="IPForm" #ipFormDirective="ngForm" (ngSubmit)="IPFormSubmit()">
     <div class="modal-body">
       <div class="row">
         <div>
           <div class="col-sm-12">
             <div class="form-group mb-2">
-              <span
-                class="mdi mdi-link-variant font-size-100 text-primary alert-icon"
-              ></span>
+              <span class="mdi mdi-link-variant font-size-100 text-primary alert-icon"></span>
               <label class="col-form-label">
-                Enter IP<span class="text-danger">*</span></label
-              >
-              <input
-                appAutofocus
-                type="text"
-                class="form-control"
-                formControlName="ip"
-              />
+                Enter IP<span class="text-danger">*</span></label>
+              <input appAutofocus type="text" class="form-control" formControlName="ip" />
               @if (ipFormDirective.submitted) { @if(hasErrorInIP('ip',
               'required')) {
               <div class="text-danger">IP is required</div>
@@ -128,19 +94,12 @@
     </div>
 
     <div class="modal-footer">
-      <button
-        type="button"
-        class="btn btn-dark waves-effect waves-light w-sm btn-sm"
-        data-bs-dismiss="modal"
-        (click)="onCancel()"
-      >
+      <button type="button" class="btn btn-dark waves-effect waves-light w-sm btn-sm" data-bs-dismiss="modal"
+        (click)="onCancel()">
         Close
       </button>
 
-      <button
-        type="submit"
-        class="btn btn-primary waves-effect waves-light w-sm btn-sm"
-      >
+      <button type="submit" class="btn btn-primary waves-effect waves-light w-sm btn-sm">
         Save
       </button>
     </div>

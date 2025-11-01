@@ -336,7 +336,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.chartData.datasets[0].data =
             this.chartData.datasets[0].data.slice(-200);
         }
-
+        console.log('ROBOT X', robot.x, 'ROBOT Y', robot.y);
         // scale robot coords
         const scaled = this.scaleCoords(robot.x, robot.y);
         robot.x = scaled.x;
@@ -454,7 +454,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         isResize: [true],
         maxSpeed: [
           null,
-          [Validators.required, Validators.max(10), Validators.min(0)],
+          [Validators.required, Validators.max(30), Validators.min(0)],
         ],
         minSpeed: [
           null,
@@ -2434,7 +2434,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private scaleCoords(x: number, y: number): { x: number; y: number } {
-    const scale = 23.51; // scale from backend map to current map
+    const scale = 114.461; // scale from backend map to current map
     return {
       x: x * scale,
       y: y * scale,
@@ -2680,7 +2680,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
       this.lastFenceState[robotId] = currentFence;
 
-      if (dataChanged) this.saveCombinedData();
+      if (dataChanged) {
+        console.log('Inside fence', insideFence);
+        console.log('AISLE', insideFence?.aisle);
+        if (insideFence?.aisle === false) {
+          console.log('False ');
+          this.saveCombinedData();
+        }
+      }
 
       const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
       this.drawCameraFOV(ctx, x, y, -yaw, 120, 100);
@@ -2925,7 +2932,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (!fence) return false;
     const fenceData = this.ensureFenceData(robotId, fence.name);
     const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
-    console.log('Speed', speed);
     if (speed === null) return false;
 
     r.speed = speed;

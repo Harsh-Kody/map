@@ -73,7 +73,7 @@ export class HomeComponent {
     this.loginService.logout().subscribe({
       next: (res) => {
         console.log(res);
-        localStorage.clear();
+        // localStorage.clear();
         this.router.navigateByUrl('/');
       },
       error: (err) => {

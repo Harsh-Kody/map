@@ -15,7 +15,7 @@ export class ZoneActivityComponent implements OnInit {
   chartAisle: any;
   chartHourlyActivity: any;
   filterForm!: FormGroup;
-
+  storeArray: any;
   constructor(private fb: FormBuilder) {}
 
   ngOnInit() {
@@ -24,6 +24,12 @@ export class ZoneActivityComponent implements OnInit {
     this.filterForm = this.fb.group({
       date: [formattedToday, Validators.required],
     });
+    // const backupString = JSON.stringify(localStorage);
+    // this.storeArray = backupString;
+    // const data = JSON.parse(backupString);
+    // for (const key in data) {
+    //   localStorage.setItem(key, data[key]);
+    // }
   }
 
   hasError(controlName: string, errorName: string) {
@@ -35,7 +41,6 @@ export class ZoneActivityComponent implements OnInit {
       this.filterForm.markAllAsTouched();
       return;
     }
-
     const { date } = this.filterForm.value;
     const data = this.getFilteredData(date);
     const hourlyData = this.getHourlyData(date);
@@ -102,48 +107,60 @@ export class ZoneActivityComponent implements OnInit {
     const raw = localStorage.getItem('robot_1_stats');
     if (!raw) return { labels: [], distance: [], stops: [] };
 
-    const parsed = JSON.parse(raw);
+    let parsed: any[] = [];
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.warn('⚠️ Failed to parse robot_1_stats');
+      return { labels: [], distance: [], stops: [] };
+    }
+
+    // Ensure proper numeric types
+    parsed = parsed.map((d) => ({
+      timestamp:
+        typeof d.timestamp === 'number' ? d.timestamp : Number(d.timestamp),
+      distance: Number(d.distance) || 0,
+      stops: Number(d.stops) || 0,
+      hour: d.hour || new Date(Number(d.timestamp)).toLocaleTimeString(),
+    }));
+
+    // Filter by selected date
     const start = new Date(selectedDate + 'T00:00:00').getTime();
     const end = new Date(selectedDate + 'T23:59:59').getTime();
 
-    const latestPerHour: {
-      [hour: number]: { distance: number; stops: number; ts: number };
-    } = {};
+    const filtered = parsed.filter(
+      (d) => d.timestamp >= start && d.timestamp <= end
+    );
 
-    parsed.forEach((d: any) => {
-      const tsNum =
-        typeof d.timestamp === 'number' ? d.timestamp : Number(d.timestamp);
-      if (isNaN(tsNum)) return;
+    // Group by hour (take last data point of each hour)
+    const hourly: Record<
+      number,
+      { ts: number; distance: number; stops: number }
+    > = {};
 
-      const ts = tsNum;
-      if (ts < start || ts > end) return;
-
-      const date = new Date(ts);
+    for (const d of filtered) {
+      const date = new Date(d.timestamp);
       const hour = date.getHours(); // 0..23
-
-      const existing = latestPerHour[hour];
-      if (!existing || ts > existing.ts) {
-        latestPerHour[hour] = {
-          distance: d.distance ?? 0,
-          stops: d.stops ?? 0,
-          ts,
+      if (!hourly[hour] || d.timestamp > hourly[hour].ts) {
+        hourly[hour] = {
+          ts: d.timestamp,
+          distance: d.distance,
+          stops: d.stops,
         };
       }
-    });
+    }
 
-    const hours = Object.keys(latestPerHour)
+    const sortedHours = Object.keys(hourly)
       .map((h) => Number(h))
       .sort((a, b) => a - b);
 
-    const labels = hours.map((h) => {
-      return `${h}:00`;
-    });
-
-    const distance = hours.map((h) => latestPerHour[h].distance);
-    const stops = hours.map((h) => latestPerHour[h].stops);
+    const labels = sortedHours.map((h) => `${h}:00`);
+    const distance = sortedHours.map((h) => Number(hourly[h].distance) || 0);
+    const stops = sortedHours.map((h) => Number(hourly[h].stops) || 0);
 
     return { labels, distance, stops };
   }
+
   private getHourlyActivityData(selectedDate: string) {
     const raw = localStorage.getItem('drivingData');
     if (!raw) return { labels: [], utilization: [], activeVehicles: [] };
@@ -228,7 +245,7 @@ export class ZoneActivityComponent implements OnInit {
       'hourlyActivityChart'
     ) as HTMLCanvasElement;
     if (!ctx) return;
-
+    console.log('data', data);
     this.chartHourlyActivity = new Chart(ctx, {
       type: 'line', // 🔹 switched to line chart
       data: {
@@ -371,6 +388,9 @@ export class ZoneActivityComponent implements OnInit {
             yAxisID: 'y',
             tension: 0.4,
             fill: false,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
           },
           {
             label: 'Stops',
@@ -380,6 +400,9 @@ export class ZoneActivityComponent implements OnInit {
             yAxisID: 'y1',
             tension: 0.4,
             fill: false,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
           },
         ],
       },
@@ -407,6 +430,7 @@ export class ZoneActivityComponent implements OnInit {
       },
     });
   }
+
   private loadAisleVisitChart(selectedDate?: string) {
     const raw = localStorage.getItem('aisleVisits');
     if (!raw) return;
