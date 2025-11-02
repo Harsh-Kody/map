@@ -2522,29 +2522,46 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   private drawCameraFOV(
     ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
+    robotWorldX: number,
+    robotWorldY: number,
     yaw: number,
     fovDeg: number,
-    range: number
+    rangeInMeters: number
   ) {
+    // Convert robot world position to canvas
+    const { x: canvasX, y: canvasY } = this.toCanvasCoords(
+      robotWorldX,
+      robotWorldY
+    );
+
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-    // console.log('scale', this.scale);
-    const visibleRange = range * this.scale * 20;
 
-    // ---- FOV cone (as-is) ----
+    // Calculate range in world coordinates (meters to image pixels)
+    // Assuming your map scale: adjust this multiplier based on your map's meters-to-pixels ratio
+    const rangeInWorldPixels = rangeInMeters * 114.461; // Use your map's scale factor
+
+    // Convert to canvas pixels by applying current scale
+    const rangeInCanvasPixels = rangeInWorldPixels * this.scale;
+
     if (this.toggleAura) {
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, visibleRange);
+      const gradient = ctx.createRadialGradient(
+        canvasX,
+        canvasY,
+        0,
+        canvasX,
+        canvasY,
+        rangeInCanvasPixels
+      );
       gradient.addColorStop(0, 'rgba(0, 128, 255, 0.25)');
       gradient.addColorStop(1, 'rgba(0, 128, 255, 0)');
 
       ctx.beginPath();
-      ctx.moveTo(x, y);
+      ctx.moveTo(canvasX, canvasY);
       ctx.arc(
-        x,
-        y,
-        visibleRange,
+        canvasX,
+        canvasY,
+        rangeInCanvasPixels,
         yawRad - fovRad / 2,
         yawRad + fovRad / 2,
         false
@@ -2555,20 +2572,20 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.fill();
     }
 
-    // ---- Direction arrow/line ----
-    const arrowLength = 20; // Adjust as needed
-    const arrowX = x + Math.cos(yawRad) * arrowLength;
-    const arrowY = y + Math.sin(yawRad) * arrowLength;
+    // Direction arrow (scaled)
+    const arrowLength = 20 * this.scale;
+    const arrowX = canvasX + Math.cos(yawRad) * arrowLength;
+    const arrowY = canvasY + Math.sin(yawRad) * arrowLength;
 
     ctx.beginPath();
-    ctx.moveTo(x, y);
+    ctx.moveTo(canvasX, canvasY);
     ctx.lineTo(arrowX, arrowY);
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Optional: draw arrowhead
-    const headLength = 6;
+    // Arrowhead (scaled)
+    const headLength = 6 * this.scale;
     const angle = yawRad;
 
     ctx.beginPath();
@@ -2582,10 +2599,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       arrowY - headLength * Math.sin(angle + Math.PI / 6)
     );
     ctx.lineTo(arrowX, arrowY);
-    ctx.fillStyle = 'black ';
+    ctx.fillStyle = 'black';
     ctx.fill();
   }
-
   private drawPedestrians() {
     if (!this.pedestrians || this.pedestrians.length === 0) return;
     if (this.togglePadestrian) {
@@ -2723,6 +2739,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       this.updateRobotStats(r, ctx, x, y);
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      this.drawCameraFOV(ctx, r.x, r.y, canvasYaw, 120, 3);
       this.lastFenceState[robotId] = currentFence;
 
       if (dataChanged) {
@@ -3248,11 +3267,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'black';
     ctx.stroke();
-    for (const r of this.robots) {
-      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
-      const canvasYaw = -yaw;
-      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
-    }
   }
 
   private drawNormalRobot(
@@ -3275,11 +3289,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.fillStyle = 'black';
       ctx.textAlign = 'center';
       ctx.fillText(insideFence.name, x, y - radius - 5);
-    }
-    for (const r of this.robots) {
-      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
-      const canvasYaw = -yaw;
-      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
     }
   }
   private isPointInSquare(
