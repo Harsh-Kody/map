@@ -227,6 +227,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       lastUpdated: any;
       lastStopTime?: any;
       isStopped?: any;
+      isDriving?: boolean;
+      drivingStopStartTime?: number | null;
+      lastDrivingState?: boolean;
     };
   } = {};
   private lastSpeedViolationTime: { [key: string]: number } = {}; // Track last violation per robot
@@ -2723,16 +2726,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.lastFenceState[robotId] = currentFence;
 
       if (dataChanged) {
-        console.log('Inside fence', insideFence);
-        console.log('AISLE', insideFence?.aisle);
         if (insideFence?.aisle === false) {
           console.log('False ');
           this.saveCombinedData();
         }
       }
-
-      // const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
-      // this.drawCameraFOV(ctx, x, y, -yaw, 120, 100);
     }
   }
   private async handleAisleVisit(
@@ -2935,6 +2933,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     timestamp: string
   ) {
     const t = new Date(timestamp);
+    const now = t.getTime();
     const hourKey = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(
       2,
       '0'
@@ -2947,8 +2946,24 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       this.drivingData[robotId] = { start: null, hours: {} };
     }
 
-    const data = this.drivingData[robotId];
+    // Initialize robot stats if not exists
+    if (!this.robotStats[robotId]) {
+      this.robotStats[robotId] = {
+        positions: [],
+        totalDistance: 0,
+        stops: 0,
+        lastReset: now,
+        lastUpdated: now,
+        isDriving: isDriving,
+        drivingStopStartTime: isDriving ? null : now,
+        lastDrivingState: isDriving,
+      };
+    }
 
+    const data = this.drivingData[robotId];
+    const stats = this.robotStats[robotId];
+
+    // Track driving time
     if (isDriving) {
       if (!data.start) data.start = t;
     } else {
@@ -2960,6 +2975,47 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         await this.dbService.set('drivingData', { robotId, hours: data.hours });
       }
     }
+
+    // 🔹 STOP DETECTION BASED ON DRIVING FLAG
+    const STOP_THRESHOLD_MS = 3000; // 3 seconds
+
+    if (
+      stats.lastDrivingState !== undefined &&
+      stats.lastDrivingState !== isDriving
+    ) {
+      // State changed
+      if (!isDriving && stats.lastDrivingState === true) {
+        // Robot just stopped driving
+        stats.drivingStopStartTime = now;
+      } else if (isDriving && stats.lastDrivingState === false) {
+        // Robot started driving again
+        if (stats.drivingStopStartTime) {
+          const stopDuration = now - stats.drivingStopStartTime;
+
+          // Only count as stop if it was stopped for more than 3 seconds
+          if (stopDuration >= STOP_THRESHOLD_MS) {
+            stats.stops += 1;
+            console.log(
+              `🛑 Stop detected for robot ${robotId} (stopped for ${(
+                stopDuration / 1000
+              ).toFixed(1)}s)`
+            );
+
+            await this.saveRobotData(
+              robotId,
+              now,
+              stats.totalDistance,
+              stats.stops
+            );
+          }
+
+          stats.drivingStopStartTime = null;
+        }
+      }
+    }
+
+    stats.lastDrivingState = isDriving;
+    stats.isDriving = isDriving;
   }
 
   /*  SPEED VIOLATION  */
@@ -3060,7 +3116,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     //  persist to localStorage
   }
-  private updateRobotStats(
+  private async updateRobotStats(
     r: any,
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -3077,74 +3133,67 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         stops: 0,
         lastReset: currentTime,
         lastUpdated: currentTime,
-        lastStopTime: 0,
-        isStopped: false, //  NEW FLAG
+        isDriving: false,
+        drivingStopStartTime: null,
+        lastDrivingState: false,
       };
     }
 
     const stats = this.robotStats[robotId];
 
-    //  Reset every 1 hour
+    // 🔹 HOURLY RESET - Reset every 1 hour
     if (currentTime - stats.lastReset >= 3600000) {
-      console.log(`🔄 1-hour reset for ${robotId}`);
-      this.saveRobotData(
+      console.log(
+        `🔄 1-hour reset for ${robotId} - Distance: ${stats.totalDistance.toFixed(
+          2
+        )}m, Stops: ${stats.stops}`
+      );
+
+      await this.saveRobotData(
         robotId,
         currentTime,
         stats.totalDistance,
         stats.stops
       );
 
+      // RESET all stats
       stats.positions = [];
       stats.totalDistance = 0;
       stats.stops = 0;
       stats.lastReset = currentTime;
     }
 
-    //  Record position
-    stats.positions.push({ x: r.x, y: r.y, time: currentTime });
-    if (stats.positions.length > 50) stats.positions.shift();
+    // 🔹 DISTANCE CALCULATION - Only when robot is actually moving
+    const MIN_MOVEMENT_THRESHOLD = 0.01; // minimum distance to count (in meters)
 
-    //  Calculate distance moved
-    if (stats.positions.length > 1) {
-      const prev = stats.positions[stats.positions.length - 2];
-      const dx = r.x - prev.x;
-      const dy = r.y - prev.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      stats.totalDistance += dist;
+    // Add current position
+    stats.positions.push({ x: r.x, y: r.y, time: currentTime });
+
+    // Keep only last 50 positions
+    if (stats.positions.length > 50) {
+      stats.positions.shift();
     }
 
-    //  Detect stop or movement
-    if (stats.positions.length >= 5) {
-      const recent = stats.positions.slice(-5);
-      const moved = recent.some(
-        (p, i, arr) =>
-          i > 0 &&
-          (Math.abs(p.x - arr[i - 1].x) > 0.05 ||
-            Math.abs(p.y - arr[i - 1].y) > 0.05)
-      );
+    // Calculate distance only if we have at least 2 positions
+    if (stats.positions.length >= 2) {
+      const prev = stats.positions[stats.positions.length - 2];
+      const curr = stats.positions[stats.positions.length - 1];
 
-      if (!moved) {
-        // Robot is currently stopped
-        if (!stats.isStopped) {
-          //  Count a new stop ONLY if it just stopped
-          stats.stops += 1;
-          stats.isStopped = true;
-          stats.lastStopTime = currentTime;
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-          this.saveRobotData(
-            robotId,
-            currentTime,
-            stats.totalDistance,
-            stats.stops
-          );
+      // Only add distance if:
+      // 1. Movement is above threshold (to filter out noise)
+      // 2. Robot is actually driving (if we have that info)
+      if (dist > MIN_MOVEMENT_THRESHOLD) {
+        if (stats.isDriving === undefined || stats.isDriving === true) {
+          stats.totalDistance += dist;
         }
-      } else {
-        // Robot is moving again reset the flag
-        if (stats.isStopped) {
-        }
-        stats.isStopped = false;
       }
     }
+
+    stats.lastUpdated = currentTime;
   }
 
   get allFenceSessions() {
