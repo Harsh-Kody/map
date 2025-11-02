@@ -26,6 +26,21 @@ import { Shape } from '../../model/shape';
 import { Subscription } from 'rxjs';
 import { ToastNotificationService } from '../../shared/toast-notification/toast-notification.service';
 import { IndexedDBService } from '../../_services/indexeddb.service';
+import {
+  MAP_CONFIG,
+  ROBOT_CONFIG,
+  GEOFENCE_CONFIG,
+  VIOLATION_CONFIG,
+  PEDESTRIAN_CONFIG,
+  CANVAS_CONFIG,
+  CHART_CONFIG,
+  AURA_CONFIG,
+  MARKER_CONFIG,
+  STORAGE_KEYS,
+  WEBSOCKET_FILTERS,
+  FORM_VALIDATION,
+  RESTRICTED_CONFIG,
+} from '../../shared/localmap.constant';
 @Component({
   selector: 'app-localmap',
   templateUrl: './localmap.component.html',
@@ -60,14 +75,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   circleRadius: number = 100;
   squareSize: number = 140;
   notifications: any[] = [];
-  // triangleBase: number = 200;
-  // triangleHeight: number = 140;
   private lastMouseDownPos = { x: 0, y: 0 };
   private dragDistance = 0;
   private resizingShape: Shape | null = null;
   private activeHandleIndex: number | null = null;
   private suppressClick = false;
-  private readonly CLICK_DRAG_THRESHOLD = 5;
   private draggingShape: Shape | null = null;
   private dragOffset = { x: 0, y: 0 };
   robot: RobotLocation | null = null;
@@ -75,7 +87,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   deleteMode: boolean = false;
   hoveredShape: Shape | null = null;
   mapImageSrc: string | null = null;
-  private readonly HANDLE_TOLERANCE = 10;
   restrictionPoints: { id: string; x: number; y: number }[] = [];
   private lastFenceState: { [robotId: string]: string | null } = {};
   showPath = false;
@@ -84,9 +95,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
   metaData: any = {};
-  private readonly MAP_W = 31.9;
-  private readonly MAP_H = 33.2;
-  private readonly WORLD_SCALE = 30.929;
+
   coord: any;
   private ignoreNextClickAfterEdit = false;
 
@@ -113,9 +122,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     endX: number;
     endY: number;
   } | null = null;
-  private lastRoll = 0;
-  private lastPitch = 0;
-  private lastYaw = 0;
+
   gridFlag: boolean = false;
   vibrationData: number[] = [];
   toggleMarker: boolean = false;
@@ -143,21 +150,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   lastX = 0;
   lastY = 0;
   lastZ = 0;
-  colors = [
-    '#ff006aff',
-    '#00ff00',
-    '#0000ff',
-    '#ffff00',
-    '#ff00ff',
-    '#000000',
-    '#008080',
-    '#f37934',
-    '#b8312f',
-    '#ffb7ce',
-    '#dfc5fe',
-    '#8b48d2',
-    '#257623ff',
-  ];
+  colors = GEOFENCE_CONFIG.DEFAULT_COLORS;
+
   copyMode: boolean = false;
   copiedShapeTemplate: Shape | null = null;
   lastQ = { qw: 0, qx: 0, qy: 0, qz: 0 };
@@ -318,14 +312,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // Connect & start filters
     this.localMapService.connect();
-    this.localMapService.startFilters([
-      'FullPose',
-      'MetaData',
-      'ObjectDetections',
-      'MarkerDetections',
-      'GlobalTrackedMarkers',
-      'SLAMStatus',
-    ]);
+    this.localMapService.startFilters(WEBSOCKET_FILTERS as any);
 
     // Robot location subscription
     this.subs.push(
@@ -343,9 +330,14 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           ...this.chartData.datasets[0].data,
           { x: time, y: vibration },
         ];
-        if (this.chartData.datasets[0].data.length > 200) {
+        if (
+          this.chartData.datasets[0].data.length >
+          CHART_CONFIG.MAX_VIBRATION_DATA_POINTS
+        ) {
           this.chartData.datasets[0].data =
-            this.chartData.datasets[0].data.slice(-200);
+            this.chartData.datasets[0].data.slice(
+              -CHART_CONFIG.MAX_VIBRATION_DATA_POINTS
+            );
         }
         // scale robot coords
         const scaled = this.scaleCoords(robot.x, robot.y);
@@ -437,14 +429,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   ngOnDestroy(): void {
     // stop filters
-    this.localMapService.stopFilters([
-      'FullPose',
-      'MetaData',
-      'ObjectDetections',
-      'MarkerDetections',
-      'GlobalTrackedMarkers',
-      'SLAMStatus',
-    ]);
+    this.localMapService.stopFilters(WEBSOCKET_FILTERS as any);
 
     // unsubscribe everything
     this.subs.forEach((s) => s.unsubscribe());
@@ -456,21 +441,38 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       {
         fenceName: [null, [Validators.required, this.isDupliateNameValidator]],
         shapeMode: [null],
-        squareSize: [200, [Validators.required, Validators.min(100)]],
-        color: ['#ff0000', Validators.required],
+        squareSize: [
+          GEOFENCE_CONFIG.DEFAULT_SQUARE_SIZE,
+          [
+            Validators.required,
+            Validators.min(GEOFENCE_CONFIG.MIN_SQUARE_SIZE),
+          ],
+        ],
+        color: [GEOFENCE_CONFIG.DEFAULT_COLOR, Validators.required],
         isRestricted: [false],
         isDrag: [true],
         aisle: [false],
         isResize: [true],
         maxSpeed: [
           null,
-          [Validators.required, Validators.max(30), Validators.min(0)],
+          [
+            Validators.required,
+            Validators.max(FORM_VALIDATION.MAX_SPEED),
+            Validators.min(FORM_VALIDATION.MIN_SPEED_LIMIT),
+          ],
         ],
         minSpeed: [
           null,
-          [Validators.required, Validators.max(10), Validators.min(0)],
+          [
+            Validators.required,
+            Validators.max(FORM_VALIDATION.MAX_SPEED_LIMIT),
+            Validators.min(FORM_VALIDATION.MIN_SPEED_LIMIT),
+          ],
         ],
-        speedLimit: [null, [Validators.required, Validators.max(7)]],
+        speedLimit: [
+          null,
+          [Validators.required, Validators.max(FORM_VALIDATION.TIME_LIMIT_MAX)],
+        ],
         timeLimitMinutes: [null, [Validators.required]],
       },
       { validators: this.minMaxSpeedValidator() }
@@ -1248,7 +1250,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             );
             if (
               Math.hypot(mouseCanvas.x - cCanvas.x, mouseCanvas.y - cCanvas.y) <
-              this.HANDLE_TOLERANCE
+              GEOFENCE_CONFIG.HANDLE_TOLERANCE
             ) {
               this.resizingShape = this.hoveredShape;
               this.activeHandleIndex = i;
@@ -1268,7 +1270,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
             );
             if (
               Math.hypot(mouseCanvas.x - pCanvas.x, mouseCanvas.y - pCanvas.y) <
-              this.HANDLE_TOLERANCE
+              GEOFENCE_CONFIG.HANDLE_TOLERANCE
             ) {
               this.resizingShape = this.hoveredShape;
               this.activeHandleIndex = i;
@@ -1424,12 +1426,12 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     datasets: [
       {
         label: 'Vibration Intensity',
-        data: [] as { x: number; y: number }[], // 👈 tell TS what your points look like
-        borderColor: 'rgba(0, 200, 0, 0.8)',
+        data: [],
+        borderColor: CHART_CONFIG.VIBRATION_COLOR,
         borderWidth: 1,
         pointRadius: 0,
         fill: true,
-        backgroundColor: 'rgba(0, 200, 0, 0.2)',
+        backgroundColor: CHART_CONFIG.VIBRATION_BG_COLOR,
         tension: 0.3,
       },
     ],
@@ -1896,7 +1898,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       return;
     }
 
-    this.suppressClick = this.dragDistance > this.CLICK_DRAG_THRESHOLD;
+    this.suppressClick =
+      this.dragDistance > GEOFENCE_CONFIG.CLICK_DRAG_THRESHOLD;
     this.isPanning = false;
     if (this.clickedNonDraggableShape) {
       this.clickedNonDraggableShape = false;
@@ -1908,7 +1911,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
     if (
       this.clickedNonDraggableShape &&
-      this.dragDistance <= this.CLICK_DRAG_THRESHOLD
+      this.dragDistance <= GEOFENCE_CONFIG.CLICK_DRAG_THRESHOLD
     ) {
       this.clickedNonDraggableShape = false;
       return;
@@ -2334,7 +2337,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       })
       .catch(() => {
         this.resetEditState();
-        // this.ignoreNextClickAfterEdit = true;
       });
   }
 
@@ -2474,10 +2476,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
 
   private scaleCoords(x: number, y: number): { x: number; y: number } {
-    const scale = 114.461; // scale from backend map to current map
     return {
-      x: x * scale,
-      y: y * scale,
+      x: x * MAP_CONFIG.SLAMCORE_SCALE,
+      y: y * MAP_CONFIG.SLAMCORE_SCALE,
     };
   }
   private quaternionToEuler(qx: number, qy: number, qz: number, qw: number) {
