@@ -1,9 +1,3 @@
-/**
- * Constants for LocalMap Component
- * Centralized configuration for map rendering, robot tracking, and geofencing
- */
-
-// ========== MAP SCALING & DIMENSIONS ==========
 export const MAP_CONFIG = {
   /** Map width in meters */
   WIDTH: 31.9,

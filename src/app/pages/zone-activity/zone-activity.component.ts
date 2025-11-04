@@ -25,7 +25,10 @@ export class ZoneActivityComponent implements OnInit {
     this.filterForm = this.fb.group({
       date: [formattedToday, Validators.required],
     });
-    await this.addStaticDrivingData();
+    this.generateDummyAisleVisitData();
+    // this.generateDummyCabinData();
+    // await this.addDummyRobotStatsData();
+    // await this.addStaticDrivingData();
     // const backupString = JSON.stringify(localStorage);
     // this.storeArray = backupString;
     // const data = JSON.parse(backupString);
@@ -42,7 +45,7 @@ export class ZoneActivityComponent implements OnInit {
       robotId: '1',
       hours: {
         '2025-11-01T09': 60.0,
-        '2025-11-01T10': 42.3,
+        '2025-11-01T10': 59.0,
         '2025-11-01T11': 38.9,
         '2025-11-01T12': 50.2,
         '2025-11-01T13': 35.4,
@@ -61,11 +64,157 @@ export class ZoneActivityComponent implements OnInit {
         '2025-11-03T16': 52.9,
         '2025-11-03T17': 50.3,
         '2025-11-03T18': 39.8,
+        '2025-11-04T13': 0.05,
+        '2025-11-04T14': 0.07,
       },
     };
 
     await this.idb.set('drivingData', dummyData);
-    console.log('✅ Dummy driving data added:', dummyData);
+  }
+  async addDummyRobotStatsData() {
+    const robotId = '1';
+    const now = new Date();
+    const stats: any[] = [];
+
+    // Generate for the last 4 days
+    for (let dayOffset = 0; dayOffset < 4; dayOffset++) {
+      const date = new Date(now);
+      date.setDate(now.getDate() - dayOffset);
+
+      for (let hour = 10; hour <= 19; hour++) {
+        // 10 AM to 7 PM
+        const entry = new Date(date);
+        entry.setHours(
+          hour,
+          Math.floor(Math.random() * 60),
+          Math.floor(Math.random() * 60)
+        );
+
+        const timestamp = entry.getTime();
+        const distance = Number((Math.random() * 500 + 50).toFixed(2)); // 50–550 meters
+        const stops = Math.floor(Math.random() * 10); // 0–9 stops
+        const hourStr = entry.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        stats.push({ timestamp, distance, stops, hour: hourStr });
+      }
+    }
+
+    const record = { robotId, stats };
+    await this.idb.set('robotStats', record);
+    console.log('✅ Dummy robotStats data added:', record);
+  }
+  generateDummyCabinData() {
+    const cabins = [
+      'Cabin 1',
+      'Cabin 2',
+      'Cabin 3',
+      'Java',
+      'Python',
+      'Angular',
+      'Mobile',
+    ]; // you can add more if needed
+    const now = new Date();
+    const data: any = {};
+
+    for (const cabin of cabins) {
+      const sessions: any[] = [];
+
+      // Generate data for the last 4 days (10 AM to 7 PM)
+      for (let dayOffset = 0; dayOffset < 4; dayOffset++) {
+        const date = new Date(now);
+        date.setDate(now.getDate() - dayOffset);
+
+        const sessionCount = Math.floor(Math.random() * 4) + 2; // 2–5 sessions per day
+
+        for (let i = 0; i < sessionCount; i++) {
+          // Random entry time between 10 AM – 6 PM
+          const entry = new Date(date);
+          entry.setHours(
+            10 + Math.floor(Math.random() * 9),
+            Math.floor(Math.random() * 60),
+            Math.floor(Math.random() * 60)
+          );
+
+          const durationMinutes = Number((Math.random() * 30 + 1).toFixed(2)); // 1–30 min
+          const exit = new Date(entry.getTime() + durationMinutes * 60 * 1000);
+
+          const hasTimeViolation = durationMinutes > 15 && Math.random() > 0.3; // ~70% chance of violation if >15min
+
+          sessions.push({
+            entryTime: entry.toISOString(),
+            exitTime: exit.toISOString(),
+            durationMinutes,
+            hasTimeViolation,
+          });
+        }
+      }
+
+      const totalDwellMinutes = Number(
+        sessions.reduce((sum, s) => sum + s.durationMinutes, 0).toFixed(2)
+      );
+      const totalViolationsCount = sessions.filter(
+        (s) => s.hasTimeViolation
+      ).length;
+
+      data[cabin] = {
+        currentlyInside: false,
+        sessions,
+        totalDwellMinutes,
+        totalViolationsCount,
+      };
+    }
+
+    const record = { id: 'combined', data };
+    console.log('✅ Dummy cabin data:', record);
+    this.idb.set('robotFenceData', {
+      id: 'combined',
+      data: record,
+    });
+    return record;
+  }
+  async generateDummyAisleVisitData() {
+    const aisleNames = ['Java', 'Python', 'C++', 'Go', 'NodeJS'];
+    const now = new Date();
+
+    for (const name of aisleNames) {
+      const timestamps: string[] = [];
+
+      // Generate 5–12 visits randomly across 4 days
+      const totalVisits = Math.floor(Math.random() * 8) + 5;
+
+      for (let i = 0; i < totalVisits; i++) {
+        const date = new Date(now);
+        const dayOffset = Math.floor(Math.random() * 4);
+        date.setDate(now.getDate() - dayOffset);
+
+        // Random time between 10 AM – 7 PM
+        date.setHours(10 + Math.floor(Math.random() * 9)); // 10–18
+        date.setMinutes(Math.floor(Math.random() * 60));
+        date.setSeconds(Math.floor(Math.random() * 60));
+
+        timestamps.push(date.toISOString());
+      }
+
+      // Sort timestamps chronologically
+      timestamps.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+      // Create the record in the same structure that handleAisleVisit() expects
+      const record = {
+        name,
+        count: timestamps.length,
+        timestamps,
+      };
+
+      // ✅ Save each aisle record into IndexedDB
+      await this.idb.set('aisleVisits', record);
+
+      console.log(`✅ Stored dummy aisle: ${name}`, record);
+    }
+
+    console.log('✅ All dummy aisle visit data stored successfully!');
   }
 
   async applyFilter() {
@@ -136,7 +285,7 @@ export class ZoneActivityComponent implements OnInit {
   }
 
   private async getHourlyData(selectedDate: string) {
-    const record = await this.idb.get('robotStats', 'robot_1_stats'); // matches save format
+    const record = await this.idb.get('robotStats', '1'); // matches save format
     if (!record || !record.stats)
       return { labels: [], distance: [], stops: [] };
 
@@ -177,7 +326,7 @@ export class ZoneActivityComponent implements OnInit {
   }
 
   private async getHourlyActivityData(selectedDate: string) {
-    const allDrivingData = await this.idb.getAll('drivingData'); // all robots
+    const allDrivingData = await this.idb.getAll('drivingData');
     if (!allDrivingData || allDrivingData.length === 0)
       return { labels: [], utilization: [], activeVehicles: [] };
 
@@ -197,14 +346,12 @@ export class ZoneActivityComponent implements OnInit {
     const labels: string[] = [];
     const utilization: number[] = [];
     const activeVehicles: number[] = [];
-
     for (const hourKey of sortedHours) {
       const minutesArray = hourlyTotals[hourKey];
       const activeCount = minutesArray.filter((m) => m > 0).length;
       const avgMinutes =
         minutesArray.reduce((a, b) => a + b, 0) / minutesArray.length;
       const percentage = Math.min((avgMinutes / 60) * 100, 100);
-
       labels.push(hourKey.slice(11, 13) + ':00');
       utilization.push(Number(percentage.toFixed(2)));
       activeVehicles.push(activeCount);

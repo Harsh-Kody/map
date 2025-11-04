@@ -257,12 +257,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     distance: number,
     stops: number
   ) {
-    const key = `robot_${robotId}_stats`;
-    const existing = (await this.dbService.get('robotStats', key)) || {
-      robotId: key,
+    const existing = (await this.dbService.get('robotStats', robotId)) || {
+      robotId, // ✅ matches keyPath
       stats: [],
     };
-
+    console.log('EXisting', existing);
     existing.stats.push({
       timestamp,
       distance,
@@ -270,8 +269,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       hour: new Date(timestamp).toLocaleTimeString(),
     });
 
-    await this.dbService.set('robotStats', existing);
+    await this.dbService.set('robotStats', existing); // ✅ correct usage for your dbService
   }
+
   minMaxSpeedValidator(): ValidatorFn {
     return (controls: AbstractControl): ValidationErrors | null => {
       const minSpeed = controls.get('minSpeed')?.value;
@@ -551,7 +551,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         localStorage.setItem('geoFences', JSON.stringify(shapesToSave));
       } else {
         this.pendingTool = this.mapForm.value;
-        console.log('pendingtool', this.pendingTool);
         this.gridEnabled = true; // <--- ENABLE GRID HERE
       }
       modal.close();
@@ -1879,7 +1878,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       if (!this.doesShapeOverlap(placedShape)) {
         this.polygons.push(placedShape);
-        console.log('placed shape', placedShape);
         const shapesToSave = this.polygons.map((s) => {
           const shapeCopy = JSON.parse(JSON.stringify(s));
           return this.convertSquareToPoints(shapeCopy);
@@ -2283,7 +2281,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       maxSpeed: this.selectedFence.maxSpeed,
       minSpeed: this.selectedFence.minSpeed,
     });
-    console.log('map', this.mapForm.value);
     const modalRef = this.modalService.open(this.geofenceToolModal, {
       backdrop: 'static',
     });
@@ -2318,7 +2315,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           this.selectedFence.speedLimit = speedLimit;
           this.selectedFence.timeLimitMinutes = timeLimitMinutes;
         }
-        console.log('Selected Fence', this.selectedFence);
         const idx = this.polygons.indexOf(this.selectedFence!);
 
         if (this.doesShapeOverlap(this.selectedFence!, idx)) {
@@ -2537,7 +2533,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   ) {
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-    // console.log('scale', this.scale);
     const visibleRange = range * this.scale * 20;
 
     if (this.toggleAura) {
@@ -2735,7 +2730,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
       if (dataChanged) {
         if (insideFence?.aisle === false) {
-          console.log('False ');
           this.saveCombinedData();
         }
       }
@@ -2779,8 +2773,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     record.timestamps.push(timestamp);
 
     await this.dbService.set('aisleVisits', record);
-
-    console.log(`🚶 Robot ${robotId} entered aisle: ${aisleName}`);
 
     return true;
   }
@@ -2980,7 +2972,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         data.hours[hourKey] = (data.hours[hourKey] || 0) + duration;
         data.start = null;
 
-        await this.dbService.set('drivingData', { robotId, hours: data.hours });
+        // ✅ CORRECT: Get existing data FIRST, then merge, then save ONCE
         const existing = (await this.dbService.get('drivingData', robotId)) || {
           hours: {},
         };
@@ -3037,7 +3029,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
   /*  SPEED VIOLATION  */
   private handleSpeedViolation(r: any, robotId: string, fence: any): boolean {
-    // console.log('Fence', fence);
     if (!fence) return false;
     const fenceData = this.ensureFenceData(robotId, fence.name);
     const speed = this.calculateSpeed(robotId, r.x, r.y, r.timestamp);
@@ -3157,7 +3148,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     }
 
     const stats = this.robotStats[robotId];
-
+    // console.log('STATS', stats.lastReset);
+    // console.log('Curr time', currentTime);
     // 🔹 HOURLY RESET - Reset every 1 hour
     if (currentTime - stats.lastReset >= 3600000) {
       console.log(
@@ -3165,7 +3157,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           2
         )}m, Stops: ${stats.stops}`
       );
-      console.log('Enters');
       await this.saveRobotData(
         robotId,
         currentTime,
@@ -3182,9 +3173,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // 🔹 DISTANCE CALCULATION - Only when robot is actually moving
     const MIN_MOVEMENT_THRESHOLD = 0.01; // minimum distance to count (in meters)
-    // console.log('R', r);
-    // const xy = r.x / 114.
-    // Add current position
     stats.positions.push({ x: r.x, y: r.y, time: currentTime });
 
     // Keep only last 50 positions
@@ -3199,14 +3187,10 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       const dx = curr.x - prev.x;
       const dy = curr.y - prev.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      // console.log('DIST', dist);
-      // 1. Movement is above threshold (to filter out noise)
-      // 2. Robot is actually driving (if we have that info)
-      // console.log('Stats driving', stats.isDriving);
+
       if (dist > MIN_MOVEMENT_THRESHOLD) {
         if (stats.isDriving === true) {
           stats.totalDistance += dist;
-          console.log('Total distance', stats.totalDistance);
         }
       }
     }
@@ -3219,6 +3203,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     for (const robotId in this.combinedTracking) {
       for (const fenceName in this.combinedTracking[robotId]) {
         const data = this.combinedTracking[robotId][fenceName];
+        // console.log('DAta', data);
         data.sessions.forEach((s: any) => {
           result.push({
             robotId,
@@ -3230,6 +3215,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         });
       }
     }
+    // console.log('RESULT', result);
     return result;
   }
   getSessionViolationSummary(robotId: string, fenceName: string): any {
