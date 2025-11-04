@@ -2,7 +2,7 @@
   <div class="zoom-controls-above">
     <button (click)="zoomIn()">+</button>
     <button (click)="zoomOut()">−</button>
-    <button (click)="resetView()">⟳</button>
+    <button *ngIf="showResetButton" (click)="resetView()">⟳</button>
   </div>
   <div class="canvas-layout">
     <!-- 🟦 Zoom buttons appear above the image -->

@@ -41,6 +41,7 @@ import {
   FORM_VALIDATION,
   RESTRICTED_CONFIG,
 } from '../../shared/localmap.constant';
+import { LOGIN } from '../../shared/serviceUrl';
 @Component({
   selector: 'app-localmap',
   templateUrl: './localmap.component.html',
@@ -95,7 +96,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   private clickedNonDraggableShape: boolean = false;
   isEditing: boolean = false;
   metaData: any = {};
-
+  showResetButton = false;
   coord: any;
   private ignoreNextClickAfterEdit = false;
 
@@ -679,6 +680,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     this.scale = this.originalScale;
     this.isPanning = false;
     this.redraw();
+    this.updateResetButtonVisibility();
   }
   @HostListener('mousemove', ['$event'])
   onMouseMove(event: MouseEvent) {
@@ -1719,7 +1721,6 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       timeLimitMinutes: this.mapForm.controls['timeLimitMinutes'].value,
     };
   }
-
   onWheel(event: WheelEvent) {
     event.preventDefault();
     const zoomFactor = 1.1;
@@ -1731,6 +1732,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     } else {
       newScale = Math.max(oldScale / zoomFactor, this.fittedScale);
     }
+
     if (newScale === oldScale) return;
 
     const canvas = this.mapCanvas.nativeElement;
@@ -1744,13 +1746,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     const imgX = (cx - this.offsetX) / oldScale;
     const imgY = (cy - this.offsetY) / oldScale;
 
-    // Adjust offsets so that the zoom keeps mouse position fixed
+    // Adjust offsets so that zoom keeps mouse position fixed
     this.offsetX = cx - imgX * newScale;
     this.offsetY = cy - imgY * newScale;
 
     this.scale = newScale;
     this.redraw();
+
+    // 👇 Add this line
+    this.updateResetButtonVisibility();
   }
+
   private isPointInShape(
     point: { x: number; y: number },
     shape: Shape
@@ -2523,46 +2529,29 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   private drawCameraFOV(
     ctx: CanvasRenderingContext2D,
-    robotWorldX: number,
-    robotWorldY: number,
+    x: number,
+    y: number,
     yaw: number,
     fovDeg: number,
-    rangeInMeters: number
+    range: number
   ) {
-    // Convert robot world position to canvas
-    const { x: canvasX, y: canvasY } = this.toCanvasCoords(
-      robotWorldX,
-      robotWorldY
-    );
-
     const fovRad = (fovDeg * Math.PI) / 180;
     const yawRad = (yaw * Math.PI) / 180;
-
-    // Calculate range in world coordinates (meters to image pixels)
-    // Assuming your map scale: adjust this multiplier based on your map's meters-to-pixels ratio
-    const rangeInWorldPixels = rangeInMeters * 114.461; // Use your map's scale factor
-
-    // Convert to canvas pixels by applying current scale
-    const rangeInCanvasPixels = rangeInWorldPixels * this.scale;
+    // console.log('scale', this.scale);
+    const visibleRange = range * this.scale * 20;
 
     if (this.toggleAura) {
-      const gradient = ctx.createRadialGradient(
-        canvasX,
-        canvasY,
-        0,
-        canvasX,
-        canvasY,
-        rangeInCanvasPixels
-      );
-      gradient.addColorStop(0, 'rgba(0, 128, 255, 0.25)');
-      gradient.addColorStop(1, 'rgba(0, 128, 255, 0)');
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, visibleRange);
+      gradient.addColorStop(0, 'rgba(71, 113, 227, 0.56)'); // bright near robot
+      gradient.addColorStop(0.5, 'rgba(0, 174, 255, 0.25)');
+      gradient.addColorStop(1, 'rgba(0, 174, 255, 0)');
 
       ctx.beginPath();
-      ctx.moveTo(canvasX, canvasY);
+      ctx.moveTo(x, y);
       ctx.arc(
-        canvasX,
-        canvasY,
-        rangeInCanvasPixels,
+        x,
+        y,
+        visibleRange,
         yawRad - fovRad / 2,
         yawRad + fovRad / 2,
         false
@@ -2573,20 +2562,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.fill();
     }
 
-    // Direction arrow (scaled)
-    const arrowLength = 20 * this.scale;
-    const arrowX = canvasX + Math.cos(yawRad) * arrowLength;
-    const arrowY = canvasY + Math.sin(yawRad) * arrowLength;
-
+    // ---- Direction arrow/line ----
+    const arrowLength = 20; // Adjust as needed
+    const arrowX = x + Math.cos(yawRad) * arrowLength;
+    const arrowY = y + Math.sin(yawRad) * arrowLength;
     ctx.beginPath();
-    ctx.moveTo(canvasX, canvasY);
+    ctx.moveTo(x, y);
     ctx.lineTo(arrowX, arrowY);
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
     ctx.stroke();
 
     // Arrowhead (scaled)
-    const headLength = 6 * this.scale;
+    const headLength = 6;
     const angle = yawRad;
 
     ctx.beginPath();
@@ -2740,9 +2728,9 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       }
       this.updateRobotStats(r, ctx, x, y);
       this.drawNormalRobot(ctx, x, y, radius, insideFence);
-      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
-      const canvasYaw = -yaw;
-      this.drawCameraFOV(ctx, r.x, r.y, canvasYaw, 120, 3);
+      // const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      // const canvasYaw = -yaw;
+      // this.drawCameraFOV(ctx, r.x, r.y, canvasYaw, 120, 3);
       this.lastFenceState[robotId] = currentFence;
 
       if (dataChanged) {
@@ -2993,6 +2981,15 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
         data.start = null;
 
         await this.dbService.set('drivingData', { robotId, hours: data.hours });
+        const existing = (await this.dbService.get('drivingData', robotId)) || {
+          hours: {},
+        };
+        const mergedHours = { ...existing.hours, ...data.hours };
+
+        await this.dbService.set('drivingData', {
+          robotId,
+          hours: mergedHours,
+        });
       }
     }
 
@@ -3168,7 +3165,7 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
           2
         )}m, Stops: ${stats.stops}`
       );
-
+      console.log('Enters');
       await this.saveRobotData(
         robotId,
         currentTime,
@@ -3185,7 +3182,8 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
 
     // 🔹 DISTANCE CALCULATION - Only when robot is actually moving
     const MIN_MOVEMENT_THRESHOLD = 0.01; // minimum distance to count (in meters)
-
+    // console.log('R', r);
+    // const xy = r.x / 114.
     // Add current position
     stats.positions.push({ x: r.x, y: r.y, time: currentTime });
 
@@ -3198,17 +3196,17 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     if (stats.positions.length >= 2) {
       const prev = stats.positions[stats.positions.length - 2];
       const curr = stats.positions[stats.positions.length - 1];
-
       const dx = curr.x - prev.x;
       const dy = curr.y - prev.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-
-      // Only add distance if:
+      // console.log('DIST', dist);
       // 1. Movement is above threshold (to filter out noise)
       // 2. Robot is actually driving (if we have that info)
+      // console.log('Stats driving', stats.isDriving);
       if (dist > MIN_MOVEMENT_THRESHOLD) {
-        if (stats.isDriving === undefined || stats.isDriving === true) {
+        if (stats.isDriving === true) {
           stats.totalDistance += dist;
+          console.log('Total distance', stats.totalDistance);
         }
       }
     }
@@ -3268,6 +3266,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'black';
     ctx.stroke();
+    for (const r of this.robots) {
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
+    }
   }
 
   private drawNormalRobot(
@@ -3291,6 +3294,11 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
       ctx.textAlign = 'center';
       ctx.fillText(insideFence.name, x, y - radius - 5);
     }
+    for (const r of this.robots) {
+      const { yaw } = this.quaternionToEuler(r.qx, r.qy, r.qz, r.qw);
+      const canvasYaw = -yaw;
+      this.drawCameraFOV(ctx, x, y, canvasYaw, 120, 100);
+    }
   }
   private isPointInSquare(
     point: { x: number; y: number },
@@ -3308,9 +3316,19 @@ export class LocalmapComponent implements AfterViewInit, OnInit {
   }
   zoomIn() {
     this.zoomAtImageCenter(1.2);
+    this.updateResetButtonVisibility();
   }
   zoomOut() {
     this.zoomAtImageCenter(1 / 1.2);
+    this.updateResetButtonVisibility();
+  }
+  private updateResetButtonVisibility() {
+    const isOriginalView =
+      Math.abs(this.scale - this.originalScale) < 0.0001 &&
+      Math.abs(this.offsetX - this.originalOffsetX) < 0.5 &&
+      Math.abs(this.offsetY - this.originalOffsetY) < 0.5;
+
+    this.showResetButton = !isOriginalView;
   }
   private zoomAtImageCenter(factor: number) {
     const oldScale = this.scale;

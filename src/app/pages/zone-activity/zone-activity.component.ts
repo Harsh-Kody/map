@@ -19,12 +19,13 @@ export class ZoneActivityComponent implements OnInit {
   storeArray: any;
   constructor(private fb: FormBuilder, private idb: IndexedDBService) {}
 
-  ngOnInit() {
+  async ngOnInit() {
     const today = new Date();
     const formattedToday = today.toISOString().split('T')[0];
     this.filterForm = this.fb.group({
       date: [formattedToday, Validators.required],
     });
+    await this.addStaticDrivingData();
     // const backupString = JSON.stringify(localStorage);
     // this.storeArray = backupString;
     // const data = JSON.parse(backupString);
@@ -35,6 +36,36 @@ export class ZoneActivityComponent implements OnInit {
 
   hasError(controlName: string, errorName: string) {
     return this.filterForm.get(controlName)?.hasError(errorName);
+  }
+  async addStaticDrivingData() {
+    const dummyData = {
+      robotId: '1',
+      hours: {
+        '2025-11-01T09': 60.0,
+        '2025-11-01T10': 42.3,
+        '2025-11-01T11': 38.9,
+        '2025-11-01T12': 50.2,
+        '2025-11-01T13': 35.4,
+        '2025-11-01T14': 27.8,
+        '2025-11-01T15': 46.1,
+        '2025-11-01T16': 54.2,
+        '2025-11-01T17': 39.6,
+        '2025-11-01T18': 32.7,
+        '2025-11-01T19': 21.3,
+        '2025-11-03T10': 55.2,
+        '2025-11-03T11': 46.8,
+        '2025-11-03T12': 33.1,
+        '2025-11-03T13': 28.9,
+        '2025-11-03T14': 24.0,
+        '2025-11-03T15': 41.2,
+        '2025-11-03T16': 52.9,
+        '2025-11-03T17': 50.3,
+        '2025-11-03T18': 39.8,
+      },
+    };
+
+    await this.idb.set('drivingData', dummyData);
+    console.log('✅ Dummy driving data added:', dummyData);
   }
 
   async applyFilter() {
